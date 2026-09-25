@@ -9,7 +9,10 @@ build/
 .pytest_cache/
 .ruff_cache/
 
-data/raw/
+data/raw/*
+!data/raw/real/
+data/raw/real/*
+!data/raw/real/README.md
 data/synthetic/
 models/*.pt
 models/*.task

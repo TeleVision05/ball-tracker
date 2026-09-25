@@ -56,7 +56,7 @@ Open **http://localhost:5173**
 
 1. Click **New Analysis** and name the session.
 2. Upload a cricket batting/net video.
-3. Click **Analyze Ball** — frames are sent in sliding windows (default 8 frames, overlap 4) to Ollama.
+3. Click **Analyze Ball** — every 3rd frame (`DEFAULT_FRAME_STRIDE` in `backend/app/config.py`) is sent to Ollama one at a time; the sliding-window mode (default window 4, overlap 0) is used only when `ANALYZE_FRAMES_INDIVIDUALLY` is off.
 4. Watch live progress; cancel anytime.
 5. Scrub the video — the trajectory draws up to the current time.
 6. Export detections as JSON/CSV or a burned-in MP4.
@@ -67,7 +67,7 @@ Configure in the UI **Settings** panel:
 
 - Ollama base URL (default `http://localhost:11434`)
 - Model name (default `qwen3-vl:8b`)
-- Sliding window size and overlap
+- Sliding window size and overlap (only used when `ANALYZE_FRAMES_INDIVIDUALLY` is off)
 
 ## Tests
 

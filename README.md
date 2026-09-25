@@ -1,21 +1,15 @@
 # BallTracker
 
-Cricket bowling analytics package for behind-stumps video capture, ball-path reconstruction, and ground-truth validation against radar and measured bounce markers.
+Cricket bowling analytics from behind-the-stumps video: stump-anchored camera calibration, ball detection and tracking, a bounce-segmented physics fit, and metrics (release speed, swing, post-bounce turn, pitch line and length) with plain-language summaries.
 
-> **BallTrace** (Ollama vision ball tracking UI) lives in [`balltrace/`](balltrace/README.md) — React + FastAPI, local-first trajectory overlay. See that README to run it.
+**Status: working (2026-09-25).** 14 root tests and 43 backend tests pass; the frontend builds. Accuracy is validated on synthetic deliveries only. See [ROADMAP.md](ROADMAP.md).
 
-## Features
-
-- Standard men's cricket pitch geometry with 3D stump landmarks
-- Interactive stump calibration for real user-provided footage
-- Ball detect + track with configurable detection method (auto / HSV / motion)
-- Capture protocol and ground-truth schema documentation
-- Configurable physics, camera, and detection parameters
+> **BallTrace** (a separate local-first UI that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md). It has its own README.
 
 ## Requirements
 
-- Python 3.10+
-- See `requirements.txt` for dependencies
+- Python 3.10+ (the checked-in `.venv` is 3.14)
+- For BallTrace only: Node.js 18+, [Ollama](https://ollama.com) with `qwen3-vl:8b`, optional FFmpeg
 
 ## Install
 
@@ -26,96 +20,66 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-Or without dev extras:
+Or without dev extras: `pip install -r requirements.txt && pip install -e .`
+
+## Configure
+
+There are no environment variables and no `.env` file.
+
+- Pitch geometry, camera, detection and physics parameters: [`config/default.yaml`](config/default.yaml)
+- BallTrace backend constants (Ollama URL, model, frame stride, timeouts): [`balltrace/backend/app/config.py`](balltrace/backend/app/config.py); Ollama URL and model can also be changed in the UI Settings panel and are stored in SQLite.
+
+## Run
+
+1. Drop `.mp4` / `.mov` clips into `data/raw/real/` (gitignored; see [data/raw/real/README.md](data/raw/real/README.md)).
+2. Calibrate and analyze in the Streamlit app:
+
+   ```bash
+   streamlit run scripts/run_session_app.py
+   ```
+
+   **Calibrate** tab: load a frame, click the stump landmarks in order, save. **Analyze** tab: run analysis, view pitch maps and overlays.
+
+3. CLI alternative:
+
+   ```bash
+   python scripts/calibrate_stumps.py --video data/raw/real/clip.mp4 --out data/raw/real/session.calib.json
+   python scripts/analyze_delivery.py --video data/raw/real/clip.mp4 --calib data/raw/real/session.calib.json --out /tmp/analysis.json
+   ```
+
+Filming and calibration guidance: [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOCOL.md). Delivery label schema: [docs/GROUND_TRUTH.md](docs/GROUND_TRUTH.md).
+
+## Test
 
 ```bash
-pip install -r requirements.txt
-pip install -e .
+pytest tests/ -q                                 # analytics package (14 tests)
+cd balltrace/backend && pytest -q                # BallTrace backend (43 tests)
+cd balltrace/frontend && npm run lint && npm run build
+ruff check .
 ```
 
-## Primary workflow (real videos)
-
-1. **Drop videos** into `data/raw/real/` (`.mp4` / `.mov`).
-
-2. **Calibrate** in the UI (recommended) or CLI:
-
-   ```bash
-   streamlit run scripts/run_session_app.py
-   ```
-
-   Use the **Calibrate** tab: load a frame, click stump landmarks in order, save.
-
-   CLI alternative:
-
-   ```bash
-   python scripts/calibrate_stumps.py \
-     --video data/raw/real/your_clip.mp4 \
-     --out data/raw/real/session.calib.json
-   ```
-
-3. **Analyze** via the **Analyze** tab, or:
-
-   ```bash
-   python scripts/analyze_delivery.py \
-     --video data/raw/real/your_clip.mp4 \
-     --calib data/raw/real/session.calib.json \
-     --out /tmp/analysis.json
-   ```
-
-4. **Or use the session app** for batch analysis, pitch maps, and overlays:
-
-   ```bash
-   streamlit run scripts/run_session_app.py
-   ```
-
-See [data/raw/real/README.md](data/raw/real/README.md) and [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOCOL.md) for filming and calibration guidance.
+Backend tests need no Ollama, ffmpeg or video file.
 
 ## Method (v1)
 
-1. Stump-anchored camera pose (PnP) in world pitch coordinates  
-2. Ball detect + track (HSV / motion / auto)  
-3. Bounce-segmented gravity/drag 3D fit with reprojection + ray distance  
-4. Metrics: release speed, β_S / C_S swing, post-bounce turn, pitch line/length  
+1. Stump-anchored camera pose (PnP) in world pitch coordinates
+2. Ball detect and track (HSV / motion / hybrid with optional MediaPipe release seed and CSRT)
+3. Bounce-segmented gravity fit (optional drag) with reprojection and ray distance
+4. Metrics: release speed, swing, post-bounce turn, pitch line/length
 
-## Developer utilities
+`src/balltracker/synthetic.py` simulates deliveries and renders synthetic video for the tests; no demo footage is required.
 
-`synthetic.py` provides in-memory physics simulation and optional synthetic video generation for **unit tests and algorithm validation**. Demo video batches are not required for normal use — drop your own real clips instead.
-
-Run tests:
-
-```bash
-pytest tests/ -q
-```
-
-Verify pitch geometry:
-
-```bash
-python -c "from balltracker.pitch import stump_landmarks_3d; print(len(stump_landmarks_3d()))"
-```
-
-## Project layout
+## Layout
 
 ```
-BallTracker/
-├── config/default.yaml      # Pitch, camera, physics, paths
-├── docs/
-│   ├── CAPTURE_PROTOCOL.md  # FullTrack-class capture setup
-│   └── GROUND_TRUTH.md      # Delivery label schema
-├── data/
-│   ├── raw/real/            # Your delivery videos + session.calib.json
-│   └── ground_truth/        # Schema and CSV template
-├── scripts/
-│   ├── calibrate_stumps.py  # Interactive stump calibration
-│   ├── analyze_delivery.py
-│   └── run_session_app.py
-├── sessions/                # Saved session UX outputs
-└── src/balltracker/         # Package source
+config/default.yaml        pitch, camera, detection, physics, paths
+docs/                      CAPTURE_PROTOCOL.md, GROUND_TRUTH.md
+data/ground_truth/         label schema and CSV template
+scripts/                   calibrate_stumps.py, analyze_delivery.py, run_session_app.py
+src/balltracker/           package source
+tests/                     pytest suite
+balltrace/                 BallTrace backend (FastAPI) and frontend (React/Vite)
 ```
-
-## Documentation
-
-- [Capture protocol](docs/CAPTURE_PROTOCOL.md) — camera placement, FPS, calibration, real-video workflow
-- [Ground truth schema](docs/GROUND_TRUTH.md) — delivery annotation fields
 
 ## License
 

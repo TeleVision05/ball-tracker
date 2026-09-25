@@ -3,6 +3,8 @@ import type { PlaybackSpeed } from '../types'
 
 export interface UseVideoPlayerResult {
   videoRef: React.RefObject<HTMLVideoElement | null>
+  /** Pass as the `<video>` ref so listeners re-attach when the element mounts. */
+  attachVideo: (el: HTMLVideoElement | null) => void
   isPlaying: boolean
   currentTime: number
   duration: number
@@ -22,6 +24,7 @@ export { SPEED_OPTIONS }
 
 export function useVideoPlayer(fps: number | null): UseVideoPlayerResult {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -29,8 +32,13 @@ export function useVideoPlayer(fps: number | null): UseVideoPlayerResult {
   const [isReady, setIsReady] = useState(false)
   const [isBuffering, setIsBuffering] = useState(false)
 
+  const attachVideo = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el
+    setVideoEl(el)
+  }, [])
+
   useEffect(() => {
-    const video = videoRef.current
+    const video = videoEl
     if (!video) return
 
     const handleTimeUpdate = () => setCurrentTime(video.currentTime)
@@ -61,7 +69,7 @@ export function useVideoPlayer(fps: number | null): UseVideoPlayerResult {
       video.removeEventListener('waiting', handleWaiting)
       video.removeEventListener('playing', handlePlaying)
     }
-  }, [videoRef.current])
+  }, [videoEl])
 
   const play = useCallback(() => {
     videoRef.current?.play().catch(() => undefined)
@@ -109,6 +117,7 @@ export function useVideoPlayer(fps: number | null): UseVideoPlayerResult {
 
   return {
     videoRef,
+    attachVideo,
     isPlaying,
     currentTime,
     duration,

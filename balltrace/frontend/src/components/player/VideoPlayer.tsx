@@ -59,7 +59,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         {videoUrl && (
           <div className="relative flex max-h-full max-w-full items-center justify-center">
             <video
-              ref={player.videoRef}
+              ref={player.attachVideo}
               src={videoUrl}
               className="max-h-full max-w-full rounded-md"
               playsInline
