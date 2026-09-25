@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+opencv-python
+numpy
+pydantic
+aiosqlite
+Pillow
+pytest
+pytest-asyncio

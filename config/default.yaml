@@ -1,0 +1,51 @@
+# BallTracker default configuration
+
+pitch:
+  length_m: 20.12
+  stump_height_m: 0.711
+  stump_width_m: 0.2286
+  stump_diameter_m: 0.0349
+  ball_diameter_m: 0.0715
+
+camera:
+  distance_behind_bowler_m: 4.0
+  height_m: 1.66
+  fov_deg: 55.0
+  resolution: [1280, 720]
+  fps: 120
+  shutter_us: 500
+
+capture:
+  min_fps: 120
+  max_fps: 240
+  min_height_in: 60
+
+detection:
+  ball_color_hsv_low: [0, 120, 120]
+  ball_color_hsv_high: [10, 255, 255]
+  min_ball_radius_px: 2
+  max_ball_radius_px: 22
+  confidence_threshold: 0.4
+  # Hybrid tracker (method="auto") knobs.
+  use_pose_release: true
+  use_csrt: true
+  gated_min_circularity: 0.15
+  release_max_gate_px: 120.0
+  hybrid_early_max_jump_px: 90.0
+  hybrid_max_jump_px: 55.0
+  pose_stride: 2
+  pose_window_frames: 90
+
+physics:
+  gravity_m_s2: 9.81
+  drag_coefficient: 0.0
+  restitution: 0.75
+  friction_coefficient: 0.15
+  swing_force_max_n: 2.0
+
+paths:
+  raw_video: data/raw/real
+  synthetic: data/synthetic
+  ground_truth: data/ground_truth
+  models: models
+  sessions: sessions

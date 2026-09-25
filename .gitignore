@@ -1,0 +1,43 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+data/raw/
+data/synthetic/
+models/*.pt
+models/*.task
+sessions/
+
+# BallTrace local data
+balltrace/data/
+balltrace/frontend/dist/
+balltrace/frontend/node_modules/
+
+.DS_Store
+*.mp4
+*.mov
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Model weights and large media
+/models/
+*.pt
+*.onnx
+*.task
+*.avi
+*.mkv
+*.db
+
+# Tool caches
+.mypy_cache/
+*.tsbuildinfo

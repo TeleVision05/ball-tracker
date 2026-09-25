@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://balltracker.local/schema/delivery.json",
+  "title": "DeliveryAnnotation",
+  "description": "Ground-truth annotation for a single cricket delivery",
+  "type": "object",
+  "required": [
+    "delivery_id",
+    "video_path",
+    "radar_speed_kmh",
+    "bounce_line_m",
+    "bounce_length_m"
+  ],
+  "properties": {
+    "delivery_id": {
+      "type": "string",
+      "description": "Unique delivery identifier"
+    },
+    "video_path": {
+      "type": "string",
+      "description": "Relative path to the delivery video"
+    },
+    "radar_speed_kmh": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Radar-measured release speed in km/h"
+    },
+    "bounce_line_m": {
+      "type": "number",
+      "description": "Lateral bounce offset from pitch centre in metres (+X off-side)"
+    },
+    "bounce_length_m": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 25,
+      "description": "Bounce distance from batter-end crease toward bowler in metres"
+    },
+    "release_speed_kmh": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Video or physics-derived release speed in km/h"
+    },
+    "release_position_m": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "Ball release position [x, y, z] in metres"
+    },
+    "bounce_position_m": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "Bounce position [x, y, z] in metres"
+    },
+    "beta_s": {
+      "type": "number",
+      "description": "True lateral swing acceleration parameter in m/s^2"
+    },
+    "turn_m": {
+      "type": "number",
+      "description": "Post-bounce lateral deviation in metres"
+    },
+    "waypoints_3d_m": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": { "type": "number" },
+        "minItems": 3,
+        "maxItems": 3
+      },
+      "description": "Sampled 3D ball positions in metres"
+    },
+    "track_2d_px": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": { "type": "number" },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "description": "Projected image coordinates [u, v] per frame"
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Video frame rate"
+    },
+    "frame_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Total video frames"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-text annotation notes"
+    }
+  },
+  "additionalProperties": false
+}

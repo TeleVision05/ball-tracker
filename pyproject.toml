@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "balltracker"
+version = "0.1.0"
+description = "Cricket bowling analytics: capture protocol, pitch geometry, synthetic validation data"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "scipy>=1.11",
+    "pyyaml>=6.0",
+    "matplotlib>=3.7",
+    "pandas>=2.0",
+    "streamlit>=1.28",
+    "streamlit-image-coordinates>=0.1.6",
+    "Pillow>=10.0",
+    "mediapipe>=0.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "ruff>=0.1",
+]
+detection = [
+    "ultralytics>=8.0",
+]
+
+[project.scripts]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# scripts bootstrap sys.path to src/ before importing balltracker
+"scripts/*.py" = ["E402"]
