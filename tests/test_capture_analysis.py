@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -37,6 +38,7 @@ def _sidecar_payload(
         markers[marker] = [float(pixel[0] / width), float(pixel[1] / height)]
     if timestamps is None:
         timestamps = [round(i * 1_000_000 / fps) for i in range(frame_count)]
+    span_s = _timestamp_span_s(timestamps)
     return {
         "version": 2,
         "id": delivery_id,
@@ -48,6 +50,8 @@ def _sidecar_payload(
         "orientationHintDegrees": 0,
         "measuredFps": float(fps),
         "captureFps": fps,
+        "wallClockSeconds": span_s,
+        "durationSeconds": span_s,
         "presentationTimestampsUs": timestamps,
         "markers": markers,
         "camera": {"intrinsicMatrixUpright": camera.intrinsic_matrix().tolist()},
@@ -72,6 +76,12 @@ def _write_synthetic_capture(out_dir: Path, fps: int = 120, seed: int = 7) -> tu
     sidecar_path = out_dir / f"{delivery_id}.capture.json"
     sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
     return sidecar_path, gt
+
+
+def _timestamp_span_s(timestamps: list[int]) -> float:
+    if len(timestamps) < 2:
+        return 0.0
+    return (int(timestamps[-1]) - int(timestamps[0])) / 1_000_000
 
 
 def test_missing_video_raises(tmp_path: Path) -> None:
@@ -146,7 +156,10 @@ def test_irregular_timestamps_set_presentation_clock(tmp_path: Path) -> None:
         0 if i == 0 else round(i * 1_000_000 / fps) + (5000 if i % 2 else 0)
         for i in range(int(gt["frame_count"]))
     ]
+    span_s = _timestamp_span_s(timestamps)
     payload["presentationTimestampsUs"] = timestamps
+    payload["wallClockSeconds"] = span_s
+    payload["durationSeconds"] = span_s
     sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
 
     result = analyze_capture(sidecar_path, detection_method="hsv")
@@ -154,6 +167,23 @@ def test_irregular_timestamps_set_presentation_clock(tmp_path: Path) -> None:
     for point in result["track"]:
         expected = (timestamps[point["frame_idx"]] - timestamps[0]) / 1_000_000
         assert point["t_s"] == pytest.approx(expected, abs=1e-6)
+
+
+def test_mismatched_wall_clock_keeps_frame_index(tmp_path: Path) -> None:
+    sidecar_path, _gt = _write_synthetic_capture(tmp_path / "clip")
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    fps = int(payload["captureFps"])
+    payload["wallClockSeconds"] = float(payload["durationSeconds"]) * 2.0
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = analyze_capture(sidecar_path, detection_method="hsv")
+    assert result["timing_source"] == "frame_index"
+    assert (
+        "Container timestamps do not match the wall clock; times use frame index divided by fps."
+        in result["warnings"]
+    )
+    for point in result["track"]:
+        assert point["t_s"] == pytest.approx(point["frame_idx"] / fps)
 
 
 def test_rotate_4x2_ninety_clockwise_becomes_2x4(tmp_path: Path) -> None:
@@ -172,6 +202,102 @@ def test_rotate_4x2_ninety_clockwise_becomes_2x4(tmp_path: Path) -> None:
         assert ok
         assert frame.shape[1] == 2
         assert frame.shape[0] == 4
+    finally:
+        if temporary:
+            upright.unlink(missing_ok=True)
+
+
+def _write_half_color_clip(path: Path, width: int = 8, height: int = 4) -> None:
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:, : width // 2] = (0, 0, 255)
+    frame[:, width // 2 :] = (255, 0, 0)
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (width, height))
+    assert writer.isOpened()
+    writer.write(frame)
+    writer.release()
+
+
+def _read_first_frame(path: Path, *, disable_orientation_auto: bool) -> np.ndarray:
+    capture = cv2.VideoCapture(str(path))
+    assert capture.isOpened()
+    if disable_orientation_auto:
+        prop = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
+        assert prop is not None
+        capture.set(prop, 0)
+    ok, frame = capture.read()
+    capture.release()
+    assert ok and frame is not None
+    return frame
+
+
+def _auto_orientation_changes_size(path: Path) -> bool:
+    auto = _read_first_frame(path, disable_orientation_auto=False)
+    raw = _read_first_frame(path, disable_orientation_auto=True)
+    return auto.shape[0] > auto.shape[1] and raw.shape[1] > raw.shape[0]
+
+
+def _ffmpeg_display_rotation(source: Path, destination: Path) -> bool:
+    ffmpeg = Path("/opt/homebrew/bin/ffmpeg")
+    if not ffmpeg.is_file():
+        return False
+    commands = [
+        [
+            str(ffmpeg),
+            "-y",
+            "-i",
+            str(source),
+            "-c",
+            "copy",
+            "-metadata:s:v:0",
+            "rotate=90",
+            str(destination),
+        ],
+        [
+            str(ffmpeg),
+            "-y",
+            "-display_rotation",
+            "90",
+            "-i",
+            str(source),
+            "-c",
+            "copy",
+            str(destination),
+        ],
+    ]
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, check=False)
+        produced = result.returncode == 0 and destination.is_file()
+        if produced and _auto_orientation_changes_size(destination):
+            return True
+    return False
+
+
+def _frames_close(left: np.ndarray, right: np.ndarray) -> bool:
+    if left.shape != right.shape:
+        return False
+    return int(np.max(np.abs(left.astype(np.int16) - right.astype(np.int16)))) <= 20
+
+
+def test_orientation_hint_rotates_encoded_buffer_once(tmp_path: Path) -> None:
+    source = tmp_path / "wide.mp4"
+    oriented = tmp_path / "oriented.mp4"
+    _write_half_color_clip(source, width=8, height=4)
+    if not _ffmpeg_display_rotation(source, oriented):
+        pytest.skip("ffmpeg could not make OpenCV auto-orient this clip")
+
+    auto = _read_first_frame(oriented, disable_orientation_auto=False)
+    encoded = _read_first_frame(oriented, disable_orientation_auto=True)
+    assert auto.shape[0] > auto.shape[1]
+    assert encoded.shape[1] > encoded.shape[0]
+
+    upright, _size, temporary = upright_video(oriented, 90)
+    try:
+        output = _read_first_frame(upright, disable_orientation_auto=True)
+        once = cv2.rotate(encoded, cv2.ROTATE_90_CLOCKWISE)
+        twice = cv2.rotate(once, cv2.ROTATE_90_CLOCKWISE)
+        assert output.shape[0] > output.shape[1]
+        assert _frames_close(output, once)
+        assert not _frames_close(output, twice)
     finally:
         if temporary:
             upright.unlink(missing_ok=True)

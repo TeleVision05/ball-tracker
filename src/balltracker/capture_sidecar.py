@@ -44,6 +44,8 @@ class CaptureSidecar:
     farLeft: tuple[float, float]
     farRight: tuple[float, float]
     intrinsicMatrixUpright: np.ndarray
+    wallClockSeconds: float | None = None
+    durationSeconds: float | None = None
 
 
 def load_capture_sidecar(path: Path) -> CaptureSidecar:
@@ -92,6 +94,8 @@ def capture_sidecar_from_dict(data: dict) -> CaptureSidecar:
         farLeft=_marker_pair(markers, "farLeft"),
         farRight=_marker_pair(markers, "farRight"),
         intrinsicMatrixUpright=intrinsic,
+        wallClockSeconds=_optional_float(data.get("wallClockSeconds")),
+        durationSeconds=_optional_float(data.get("durationSeconds")),
     )
 
 
@@ -209,6 +213,12 @@ def _upright_size(
             return encoded_height, encoded_width
         return encoded_width, encoded_height
     return int(upright_width), int(upright_height)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _timestamps(value: object) -> list[int]:

@@ -23,6 +23,9 @@ from .tracking import TrackPoint, track_video
 
 _NO_TIMESTAMPS = "No presentation timestamps; times use frame index divided by fps."
 _PARTIAL_TIMESTAMPS = "Some track frames have no presentation timestamp."
+_CLOCK_MISMATCH = (
+    "Container timestamps do not match the wall clock; times use frame index divided by fps."
+)
 _FPS_MISMATCH = "Measured fps differs from the requested capture fps."
 
 
@@ -50,8 +53,9 @@ def upright_video(
     """Return the clip in the upright picture, its size, and whether it is temporary.
 
     ``orientation_hint_degrees`` is a clockwise rotation from the encoded buffer
-    to the upright picture. ``0`` keeps the original file. ``90``, ``180``, and
-    ``270`` (modulo 360) are written to a temporary video the caller must delete.
+    to the upright picture. Container display rotation is left off, so this hint
+    is applied once. ``0`` keeps the original file. ``90``, ``180``, and ``270``
+    (modulo 360) are written to a temporary video the caller must delete.
     """
     code = _clockwise_rotation_code(orientation_hint_degrees)
     if code is None:
@@ -90,7 +94,7 @@ def analyze_capture(
         if temporary:
             upright_path.unlink(missing_ok=True)
     timestamps = sidecar.presentationTimestampsUs
-    if _timestamps_cover_track(timestamps, track):
+    if _use_presentation_clock(sidecar, track):
         track = apply_presentation_times(track, timestamps)
     if len(track) < 5:
         raise RuntimeError(f"Insufficient track points ({len(track)}) in {video}")
@@ -134,7 +138,7 @@ def analyze_capture(
         },
         "calib_rmse_px": float(calib.rms_reprojection_error),
         "camera_center_m": [float(center[0]), float(center[1]), float(center[2])],
-        "timing_source": _timing_source(timestamps, track),
+        "timing_source": _timing_source(sidecar, track),
         "warnings": _warnings(sidecar, track),
     }
 
@@ -158,8 +162,23 @@ def _timestamps_cover_track(timestamps: list[int], track: list[TrackPoint]) -> b
     return bool(timestamps) and all(0 <= point.frame_idx < len(timestamps) for point in track)
 
 
-def _timing_source(timestamps: list[int], track: list[TrackPoint]) -> str:
-    if _timestamps_cover_track(timestamps, track):
+def _durations_match(sidecar: CaptureSidecar) -> bool:
+    wall = sidecar.wallClockSeconds
+    duration = sidecar.durationSeconds
+    if not _positive_finite(wall) or not _positive_finite(duration):
+        return False
+    wall_s = float(wall)
+    duration_s = float(duration)
+    return abs(wall_s - duration_s) / max(wall_s, duration_s) <= 0.05
+
+
+def _use_presentation_clock(sidecar: CaptureSidecar, track: list[TrackPoint]) -> bool:
+    covered = _timestamps_cover_track(sidecar.presentationTimestampsUs, track)
+    return covered and _durations_match(sidecar)
+
+
+def _timing_source(sidecar: CaptureSidecar, track: list[TrackPoint]) -> str:
+    if _use_presentation_clock(sidecar, track):
         return "presentation_timestamps"
     return "frame_index"
 
@@ -171,6 +190,8 @@ def _warnings(sidecar: CaptureSidecar, track: list[TrackPoint]) -> list[str]:
         warnings.append(_NO_TIMESTAMPS)
     elif not _timestamps_cover_track(timestamps, track):
         warnings.append(_PARTIAL_TIMESTAMPS)
+    elif not _durations_match(sidecar):
+        warnings.append(_CLOCK_MISMATCH)
     measured = sidecar.measuredFps
     capture = float(sidecar.captureFps)
     if (
@@ -197,20 +218,29 @@ def _clockwise_rotation_code(orientation_hint_degrees: int) -> int | None:
     )
 
 
-def _encoded_frame_size(video_path: Path) -> tuple[int, int]:
+def _open_encoded_capture(video_path: Path) -> cv2.VideoCapture:
+    """Open the encoded buffer with container display rotation left off."""
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         raise RuntimeError(f"Cannot open video: {video_path}")
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    capture.release()
+    prop = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
+    if prop is not None:
+        capture.set(prop, 0)
+    return capture
+
+
+def _encoded_frame_size(video_path: Path) -> tuple[int, int]:
+    capture = _open_encoded_capture(video_path)
+    try:
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    finally:
+        capture.release()
     return width, height
 
 
 def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tuple[int, int]]:
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+    capture = _open_encoded_capture(video_path)
     source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     writer_fps = source_fps if source_fps > 1.0 else 30.0
     descriptor, name = tempfile.mkstemp(suffix=".mp4")
