@@ -89,49 +89,6 @@ def test_round_trip_recovers_default_camera(tmp_path: Path) -> None:
     assert reprojection_rmse(calib, pixels, landmarks) < 2.0
 
 
-def test_y_down_pose_stays_above_the_pitch() -> None:
-    """A proper rotation (image y down) must not be mirrored under the pitch."""
-    camera = default_camera()
-    landmarks = stump_landmarks_3d()
-    forward = camera.look_at_m - camera.position_m
-    forward = forward / np.linalg.norm(forward)
-    right = np.cross(forward, np.array([0.0, 0.0, 1.0]))
-    right = right / np.linalg.norm(right)
-    down = np.cross(forward, right)
-    rotation = np.stack([right, down, forward])
-    translation = -rotation @ camera.position_m
-    intrinsic = camera.intrinsic_matrix()
-    width, height = camera.resolution
-    marker_names = {
-        "nearLeft": "bowler_left_base",
-        "nearRight": "bowler_right_base",
-        "farLeft": "batter_left_base",
-        "farRight": "batter_right_base",
-    }
-    markers = {}
-    for marker, landmark in marker_names.items():
-        cam = rotation @ landmarks[landmark] + translation
-        projected = intrinsic @ cam
-        pixel = projected[:2] / projected[2]
-        markers[marker] = [float(pixel[0] / width), float(pixel[1] / height)]
-
-    sidecar = capture_sidecar_from_dict(
-        _complete_sidecar(
-            encodedWidth=width,
-            encodedHeight=height,
-            uprightWidth=width,
-            uprightHeight=height,
-            markers=markers,
-            camera={"intrinsicMatrixUpright": intrinsic.tolist()},
-        )
-    )
-    calib = calibrate_from_capture(sidecar)
-    center_error = np.linalg.norm(calib.camera_center_world - camera.position_m)
-    assert center_error < 0.25
-    assert calib.camera_center_world[2] > 0.4
-    assert calib.rms_reprojection_error < 2.0
-
-
 def test_orientation_90_derives_upright_size() -> None:
     payload = _complete_sidecar(
         encodedWidth=1920,

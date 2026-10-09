@@ -31,7 +31,11 @@ class CameraModel:
         return np.array([[f, 0.0, w / 2.0], [0.0, f, h / 2.0], [0.0, 0.0, 1.0]], dtype=np.float64)
 
     def extrinsic_matrix(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return rotation R (world->camera) and translation t."""
+        """Return world-to-camera rotation R and translation t.
+
+        Image axes are right-handed: +X right, +Y down, +Z forward.
+        ``det(R)`` is +1, and projected ``v`` increases downward.
+        """
         forward = self.look_at_m - self.position_m
         forward /= np.linalg.norm(forward)
         world_up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
@@ -41,9 +45,8 @@ class CameraModel:
             right = np.array([1.0, 0.0, 0.0], dtype=np.float64)
         else:
             right /= right_norm
-        up = np.cross(right, forward)
-        # Camera looks along +Z_cam; world points map to camera frame.
-        R = np.stack([right, up, forward], axis=0)
+        down = np.cross(forward, right)
+        R = np.stack([right, down, forward], axis=0)
         t = -R @ self.position_m
         return R, t
 

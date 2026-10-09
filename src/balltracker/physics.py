@@ -81,10 +81,9 @@ def ray_plane_intersection(
 def detect_bounce_index(track: list[TrackPoint], calib: CameraCalibration | None = None) -> int:
     """Guess bounce index for a behind-stumps camera.
 
-    Looking down the pitch, image ``v`` typically *decreases* as the ball
-    travels away; the bounce is near the local minimum of ``v`` in the
-    second half of the track. When calibration is available, prefer the
-    candidate whose pitch-plane intersection lies on the wicket.
+    Image ``v`` increases downward. The bounce is near the local maximum
+    of ``v`` (lowest in the frame) in the latter part of the track. When
+    calibration is available, prefer the on-pitch candidate with the largest ``v``.
     """
     if len(track) < 5:
         return max(0, len(track) // 2)
@@ -93,7 +92,7 @@ def detect_bounce_index(track: list[TrackPoint], calib: CameraCalibration | None
     start = max(1, len(track) // 3)
     end = len(track) - 1
     local = vs[start:end]
-    bounce_idx = int(np.argmin(local) + start)
+    bounce_idx = int(np.argmax(local) + start)
 
     if calib is None:
         return bounce_idx
@@ -107,8 +106,8 @@ def detect_bounce_index(track: list[TrackPoint], calib: CameraCalibration | None
         on_pitch = 2.0 <= hit[1] <= PITCH_LENGTH_M + 1.0 and abs(hit[0]) < 2.5
         if not on_pitch:
             continue
-        # Prefer low image-v (far) and on-pitch plane hit.
-        score = float(vs[idx]) + 5.0 * abs(hit[0])
+        # Prefer large image-v (low in the frame) and an on-pitch plane hit.
+        score = -float(vs[idx]) + 5.0 * abs(hit[0])
         if score < best_score:
             best_score = score
             best_idx = idx

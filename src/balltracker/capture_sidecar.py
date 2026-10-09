@@ -118,13 +118,10 @@ def marker_pixels(sidecar: CaptureSidecar) -> dict[str, np.ndarray]:
 def calibrate_from_capture(sidecar: CaptureSidecar) -> CameraCalibration:
     """Calibrate the camera from the four coplanar stump bases.
 
-    ``cv2.SOLVEPNP_IPPE`` returns up to two planar poses. The bases lie on
-    ``z = 0``, so the sign of each pose's world-Z column is not observed.
-    OpenCV forces a proper rotation, which puts a y-up image under the pitch.
-    The sign that places the camera above the pitch is kept; reprojection of
-    the four bases does not change. The pose behind the bowler
-    (world ``Y < -0.5`` and ``0.4 < Z < 4``) wins. When both qualify, or
-    neither does, the lower reprojection RMSE wins.
+    ``cv2.SOLVEPNP_IPPE`` returns up to two planar poses. The pose whose
+    camera centre is behind the bowler and above the pitch
+    (world ``Y < -0.5`` and ``0.4 < Z < 4``) is kept. When both qualify,
+    or neither does, the lower reprojection RMSE wins.
     """
     image_points = marker_pixels(sidecar)
     landmarks = stump_landmarks_3d()
@@ -154,7 +151,6 @@ def calibrate_from_capture(sidecar: CaptureSidecar) -> CameraCalibration:
     for rvec, tvec in zip(rvecs, tvecs):
         rotation, _ = cv2.Rodrigues(np.asarray(rvec, dtype=np.float64))
         translation = np.asarray(tvec, dtype=np.float64).reshape(3)
-        rotation = _rotation_above_pitch(np.asarray(rotation, dtype=np.float64), translation)
         calibrations.append(
             _calibration(
                 intrinsic,
@@ -230,25 +226,6 @@ def _intrinsic_matrix(camera: object) -> np.ndarray:
     if intrinsic.shape != (3, 3):
         raise ValueError(_INTRINSIC_ERROR)
     return intrinsic
-
-
-def _camera_center(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
-    return -rotation.T @ translation
-
-
-def _z_in_capture_window(rotation: np.ndarray, translation: np.ndarray) -> bool:
-    return bool(0.4 < _camera_center(rotation, translation)[2] < 4.0)
-
-
-def _rotation_above_pitch(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
-    """Pick the unobservable world-Z sign that puts the camera above the pitch."""
-    if _z_in_capture_window(rotation, translation):
-        return rotation
-    flipped = rotation.copy()
-    flipped[:, 2] *= -1
-    if _z_in_capture_window(flipped, translation):
-        return flipped
-    return rotation
 
 
 def _behind_bowler_and_above(calib: CameraCalibration) -> bool:
