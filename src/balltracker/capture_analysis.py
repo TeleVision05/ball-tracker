@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 from pathlib import Path
+
+import cv2
 
 from .capture_sidecar import (
     CaptureSidecar,
@@ -39,6 +43,23 @@ def resolve_capture_video(
     return resolved
 
 
+def upright_video(
+    video_path: Path,
+    orientation_hint_degrees: int,
+) -> tuple[Path, tuple[int, int], bool]:
+    """Return the clip in the upright picture, its size, and whether it is temporary.
+
+    ``orientation_hint_degrees`` is a clockwise rotation from the encoded buffer
+    to the upright picture. ``0`` keeps the original file. ``90``, ``180``, and
+    ``270`` (modulo 360) are written to a temporary video the caller must delete.
+    """
+    code = _clockwise_rotation_code(orientation_hint_degrees)
+    if code is None:
+        return video_path, _encoded_frame_size(video_path), False
+    path, size = _write_rotated_video(video_path, code)
+    return path, size, True
+
+
 def analyze_capture(
     sidecar_path: str | Path,
     video_path: str | Path | None = None,
@@ -56,9 +77,20 @@ def analyze_capture(
         None if video_path is None else Path(video_path),
     )
     fps = _tracker_fps(sidecar, config)
-    track = track_video(video, fps=fps, config=config, method=detection_method)
+    temporary = False
+    upright_path = video
+    try:
+        upright_path, upright_size, temporary = upright_video(
+            video,
+            sidecar.orientationHintDegrees,
+        )
+        _require_upright_size(upright_size, sidecar)
+        track = track_video(upright_path, fps=fps, config=config, method=detection_method)
+    finally:
+        if temporary:
+            upright_path.unlink(missing_ok=True)
     timestamps = sidecar.presentationTimestampsUs
-    if timestamps:
+    if _timestamps_cover_track(timestamps, track):
         track = apply_presentation_times(track, timestamps)
     if len(track) < 5:
         raise RuntimeError(f"Insufficient track points ({len(track)}) in {video}")
@@ -122,12 +154,12 @@ def _tracker_fps(sidecar: CaptureSidecar, config: dict) -> float:
     return float(config["camera"]["fps"])
 
 
-def _frame_in_timestamps(point: TrackPoint, timestamps: list[int]) -> bool:
-    return 0 <= point.frame_idx < len(timestamps)
+def _timestamps_cover_track(timestamps: list[int], track: list[TrackPoint]) -> bool:
+    return bool(timestamps) and all(0 <= point.frame_idx < len(timestamps) for point in track)
 
 
 def _timing_source(timestamps: list[int], track: list[TrackPoint]) -> str:
-    if timestamps and all(_frame_in_timestamps(point, timestamps) for point in track):
+    if _timestamps_cover_track(timestamps, track):
         return "presentation_timestamps"
     return "frame_index"
 
@@ -137,7 +169,7 @@ def _warnings(sidecar: CaptureSidecar, track: list[TrackPoint]) -> list[str]:
     timestamps = sidecar.presentationTimestampsUs
     if not timestamps:
         warnings.append(_NO_TIMESTAMPS)
-    elif any(not _frame_in_timestamps(point, timestamps) for point in track):
+    elif not _timestamps_cover_track(timestamps, track):
         warnings.append(_PARTIAL_TIMESTAMPS)
     measured = sidecar.measuredFps
     capture = float(sidecar.captureFps)
@@ -148,3 +180,80 @@ def _warnings(sidecar: CaptureSidecar, track: list[TrackPoint]) -> list[str]:
     ):
         warnings.append(_FPS_MISMATCH)
     return warnings
+
+
+def _clockwise_rotation_code(orientation_hint_degrees: int) -> int | None:
+    angle = int(orientation_hint_degrees) % 360
+    if angle == 0:
+        return None
+    if angle == 90:
+        return cv2.ROTATE_90_CLOCKWISE
+    if angle == 180:
+        return cv2.ROTATE_180
+    if angle == 270:
+        return cv2.ROTATE_90_COUNTERCLOCKWISE
+    raise ValueError(
+        f"orientation hint {orientation_hint_degrees} must be a multiple of 90 degrees"
+    )
+
+
+def _encoded_frame_size(video_path: Path) -> tuple[int, int]:
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    capture.release()
+    return width, height
+
+
+def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tuple[int, int]]:
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+    source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+    writer_fps = source_fps if source_fps > 1.0 else 30.0
+    descriptor, name = tempfile.mkstemp(suffix=".mp4")
+    os.close(descriptor)
+    temp_path = Path(name)
+    writer: cv2.VideoWriter | None = None
+    try:
+        ok, frame = capture.read()
+        if not ok:
+            raise RuntimeError(f"Cannot read frames from {video_path}")
+        upright = cv2.rotate(frame, rotate_code)
+        height, width = upright.shape[:2]
+        writer = cv2.VideoWriter(
+            str(temp_path),
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            writer_fps,
+            (width, height),
+        )
+        if not writer.isOpened():
+            raise RuntimeError(f"Failed to open upright video writer: {temp_path}")
+        writer.write(upright)
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+            writer.write(cv2.rotate(frame, rotate_code))
+        return temp_path, (width, height)
+    except Exception:
+        if writer is not None:
+            writer.release()
+            writer = None
+        temp_path.unlink(missing_ok=True)
+        raise
+    finally:
+        capture.release()
+        if writer is not None:
+            writer.release()
+
+
+def _require_upright_size(actual: tuple[int, int], sidecar: CaptureSidecar) -> None:
+    expected = (int(sidecar.uprightWidth), int(sidecar.uprightHeight))
+    if actual != expected:
+        raise RuntimeError(
+            f"Upright video is {actual[0]}x{actual[1]} "
+            f"but the sidecar upright size is {expected[0]}x{expected[1]}"
+        )

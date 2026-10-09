@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
-from balltracker.capture_analysis import analyze_capture
+from balltracker.capture_analysis import analyze_capture, upright_video
 from balltracker.pitch import stump_landmarks_3d
 from balltracker.synthetic import default_camera, generate_delivery
 
@@ -120,3 +121,57 @@ def test_empty_timestamps_use_frame_index(tmp_path: Path) -> None:
     result = analyze_capture(sidecar_path, detection_method="hsv")
     assert result["timing_source"] == "frame_index"
     assert "No presentation timestamps; times use frame index divided by fps." in result["warnings"]
+
+
+def test_partial_timestamps_keep_frame_index_clock(tmp_path: Path) -> None:
+    sidecar_path, _gt = _write_synthetic_capture(tmp_path / "clip")
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    fps = int(payload["captureFps"])
+    payload["presentationTimestampsUs"] = [0, round(1_000_000 / fps)]
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = analyze_capture(sidecar_path, detection_method="hsv")
+    assert len(result["track"]) > 2
+    assert result["timing_source"] == "frame_index"
+    assert "Some track frames have no presentation timestamp." in result["warnings"]
+    for point in result["track"]:
+        assert point["t_s"] == pytest.approx(point["frame_idx"] / fps)
+
+
+def test_irregular_timestamps_set_presentation_clock(tmp_path: Path) -> None:
+    sidecar_path, gt = _write_synthetic_capture(tmp_path / "clip")
+    payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    fps = int(payload["captureFps"])
+    timestamps = [
+        0 if i == 0 else round(i * 1_000_000 / fps) + (5000 if i % 2 else 0)
+        for i in range(int(gt["frame_count"]))
+    ]
+    payload["presentationTimestampsUs"] = timestamps
+    sidecar_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = analyze_capture(sidecar_path, detection_method="hsv")
+    assert result["timing_source"] == "presentation_timestamps"
+    for point in result["track"]:
+        expected = (timestamps[point["frame_idx"]] - timestamps[0]) / 1_000_000
+        assert point["t_s"] == pytest.approx(expected, abs=1e-6)
+
+
+def test_rotate_4x2_ninety_clockwise_becomes_2x4(tmp_path: Path) -> None:
+    source = tmp_path / "wide.mp4"
+    writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (4, 2))
+    assert writer.isOpened()
+    writer.write(np.zeros((2, 4, 3), dtype=np.uint8))
+    writer.release()
+
+    upright, size, temporary = upright_video(source, 90)
+    try:
+        assert size == (2, 4)
+        capture = cv2.VideoCapture(str(upright))
+        ok, frame = capture.read()
+        capture.release()
+        assert ok
+        assert frame.shape[1] == 2
+        assert frame.shape[0] == 4
+    finally:
+        if temporary:
+            upright.unlink(missing_ok=True)
