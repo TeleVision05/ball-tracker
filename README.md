@@ -2,7 +2,7 @@
 
 Cricket bowling analytics from behind-the-stumps video: stump-anchored camera calibration, ball detection and tracking, a bounce-segmented physics fit, and metrics (release speed, swing, post-bounce turn, pitch line and length) with plain-language summaries.
 
-**Status: working (2026-09-25).** 14 root tests and 43 backend tests pass; the frontend builds. Accuracy is validated on synthetic deliveries only. See [ROADMAP.md](ROADMAP.md).
+**Status: working (2026-10-08).** Root tests and 43 backend tests pass; the frontend builds. Phone captures can be analysed from their sidecar. Accuracy is validated on synthetic deliveries only. See [ROADMAP.md](ROADMAP.md).
 
 > **BallTrace** (a separate local-first UI that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md). It has its own README.
 
@@ -60,7 +60,7 @@ Filming and calibration guidance: [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOC
 ## Test
 
 ```bash
-pytest tests/ -q                                 # analytics package (14 tests)
+pytest tests/ -q                                 # analytics package
 cd balltrace/backend && pytest -q                # BallTrace backend (43 tests)
 cd balltrace/frontend && npm run lint && npm run build
 ruff check .
