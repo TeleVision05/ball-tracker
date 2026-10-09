@@ -89,6 +89,50 @@ def test_round_trip_recovers_default_camera(tmp_path: Path) -> None:
     assert reprojection_rmse(calib, pixels, landmarks) < 2.0
 
 
+def test_swapped_near_far_markers_raise() -> None:
+    camera = default_camera()
+    landmarks = stump_landmarks_3d()
+    marker_names = {
+        "nearLeft": "bowler_left_base",
+        "nearRight": "bowler_right_base",
+        "farLeft": "batter_left_base",
+        "farRight": "batter_right_base",
+    }
+    width, height = camera.resolution
+    markers = {}
+    for marker, landmark in marker_names.items():
+        pixel = camera.project(landmarks[landmark].reshape(1, 3))[0]
+        markers[marker] = [float(pixel[0] / width), float(pixel[1] / height)]
+    swapped = {
+        "nearLeft": markers["farLeft"],
+        "nearRight": markers["farRight"],
+        "farLeft": markers["nearLeft"],
+        "farRight": markers["nearRight"],
+    }
+    sidecar = capture_sidecar_from_dict(
+        _complete_sidecar(
+            encodedWidth=width,
+            encodedHeight=height,
+            uprightWidth=width,
+            uprightHeight=height,
+            markers=swapped,
+            camera={"intrinsicMatrixUpright": camera.intrinsic_matrix().tolist()},
+        )
+    )
+    with pytest.raises(RuntimeError):
+        calibrate_from_capture(sidecar)
+
+
+def test_nan_intrinsic_raises() -> None:
+    matrix = [
+        [float("nan"), 0.0, 960.0],
+        [0.0, 1000.0, 540.0],
+        [0.0, 0.0, 1.0],
+    ]
+    with pytest.raises(ValueError):
+        capture_sidecar_from_dict(_complete_sidecar(camera={"intrinsicMatrixUpright": matrix}))
+
+
 def test_orientation_90_derives_upright_size() -> None:
     payload = _complete_sidecar(
         encodedWidth=1920,

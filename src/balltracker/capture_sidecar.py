@@ -121,7 +121,7 @@ def calibrate_from_capture(sidecar: CaptureSidecar) -> CameraCalibration:
     ``cv2.SOLVEPNP_IPPE`` returns up to two planar poses. The pose whose
     camera centre is behind the bowler and above the pitch
     (world ``Y < -0.5`` and ``0.4 < Z < 4``) is kept. When both qualify,
-    or neither does, the lower reprojection RMSE wins.
+    the lower reprojection RMSE wins. When neither does, raise.
     """
     image_points = marker_pixels(sidecar)
     landmarks = stump_landmarks_3d()
@@ -134,23 +134,27 @@ def calibrate_from_capture(sidecar: CaptureSidecar) -> CameraCalibration:
         [image_points[key] for key in keys],
         dtype=np.float64,
     )
-    intrinsic = np.array(sidecar.intrinsicMatrixUpright, dtype=np.float64, copy=True)
+    intrinsic = _usable_intrinsic(sidecar.intrinsicMatrixUpright)
     distortion = np.zeros(5, dtype=np.float64)
-    count, rvecs, tvecs, _errors = cv2.solvePnPGeneric(
+    _count, rvecs, tvecs, _errors = cv2.solvePnPGeneric(
         object_points,
         pixel_points,
         intrinsic,
         distortion,
         flags=cv2.SOLVEPNP_IPPE,
     )
-    if not count or not rvecs:
-        raise RuntimeError("solvePnPGeneric returned no pose")
 
     resolution = (int(sidecar.uprightWidth), int(sidecar.uprightHeight))
     calibrations: list[CameraCalibration] = []
-    for rvec, tvec in zip(rvecs, tvecs):
-        rotation, _ = cv2.Rodrigues(np.asarray(rvec, dtype=np.float64))
-        translation = np.asarray(tvec, dtype=np.float64).reshape(3)
+    pose_rvecs = [] if rvecs is None else rvecs
+    pose_tvecs = [] if tvecs is None else tvecs
+    for rvec, tvec in zip(pose_rvecs, pose_tvecs):
+        rvec_arr = np.asarray(rvec, dtype=np.float64)
+        tvec_arr = np.asarray(tvec, dtype=np.float64)
+        if not np.isfinite(rvec_arr).all() or not np.isfinite(tvec_arr).all():
+            continue
+        rotation, _ = cv2.Rodrigues(rvec_arr)
+        translation = tvec_arr.reshape(3)
         calibrations.append(
             _calibration(
                 intrinsic,
@@ -161,10 +165,13 @@ def calibrate_from_capture(sidecar: CaptureSidecar) -> CameraCalibration:
                 landmarks,
             )
         )
+    if not calibrations:
+        raise RuntimeError("solvePnPGeneric returned no usable camera pose")
 
     above_and_behind = [calib for calib in calibrations if _behind_bowler_and_above(calib)]
-    pool = above_and_behind if above_and_behind else calibrations
-    return min(pool, key=lambda calib: calib.rms_reprojection_error)
+    if not above_and_behind:
+        raise RuntimeError("no capture pose is behind the bowler and above the pitch")
+    return min(above_and_behind, key=lambda calib: calib.rms_reprojection_error)
 
 
 def presentation_times_s(timestamps_us: list[int]) -> list[float]:
@@ -219,13 +226,19 @@ def _intrinsic_matrix(camera: object) -> np.ndarray:
     matrix = camera.get("intrinsicMatrixUpright") if isinstance(camera, dict) else None
     if matrix is None:
         raise ValueError(_INTRINSIC_ERROR)
+    return _usable_intrinsic(matrix)
+
+
+def _usable_intrinsic(matrix: object) -> np.ndarray:
     try:
         intrinsic = np.asarray(matrix, dtype=np.float64)
     except (TypeError, ValueError) as exc:
         raise ValueError(_INTRINSIC_ERROR) from exc
-    if intrinsic.shape != (3, 3):
+    if intrinsic.shape != (3, 3) or not np.isfinite(intrinsic).all():
         raise ValueError(_INTRINSIC_ERROR)
-    return intrinsic
+    if float(intrinsic[0, 0]) <= 0.0 or float(intrinsic[1, 1]) <= 0.0:
+        raise ValueError(_INTRINSIC_ERROR)
+    return intrinsic.copy()
 
 
 def _behind_bowler_and_above(calib: CameraCalibration) -> bool:
