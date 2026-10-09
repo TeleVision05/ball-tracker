@@ -53,7 +53,7 @@ There are no environment variables and no `.env` file.
    python scripts/analyze_capture.py --sidecar path/to/clip.json --out /tmp/analysis.json
    ```
 
-   The video is the `videoFile` next to the sidecar. `--method hsv` is for the red synthetic ball. `--method white` or `auto` is for a real cricket ball.
+   The video is the `videoFile` next to the sidecar. `--method hsv` tracks a red ball, including the synthetic clip. `--method white` tracks a white ball. The default `--method auto` uses the hybrid motion tracker.
 
 Filming and calibration guidance: [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOCOL.md). Delivery label schema: [docs/GROUND_TRUTH.md](docs/GROUND_TRUTH.md).
 
