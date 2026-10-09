@@ -47,6 +47,14 @@ There are no environment variables and no `.env` file.
    python scripts/analyze_delivery.py --video data/raw/real/clip.mp4 --calib data/raw/real/session.calib.json --out /tmp/analysis.json
    ```
 
+4. Phone clips are JSON sidecars from the Android capture app:
+
+   ```bash
+   python scripts/analyze_capture.py --sidecar path/to/clip.json --out /tmp/analysis.json
+   ```
+
+   The video is the `videoFile` next to the sidecar. `--method hsv` is for the red synthetic ball. `--method white` or `auto` is for a real cricket ball.
+
 Filming and calibration guidance: [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOCOL.md). Delivery label schema: [docs/GROUND_TRUTH.md](docs/GROUND_TRUTH.md).
 
 ## Test
