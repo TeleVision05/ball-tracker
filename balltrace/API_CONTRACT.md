@@ -20,16 +20,36 @@ Base URL: `http://localhost:8000`
 {
   "base_url": "http://localhost:11434",
   "model": "qwen3-vl:8b",
-  "window_size": 8,
-  "window_overlap": 4,
+  "window_size": 4,
+  "window_overlap": 0,
+  "frame_stride": 3,
   "available": true,
   "error": null
 }
 ```
 
 ### PUT /api/settings/ollama
-Body: `{ "base_url"?: string, "model"?: string, "window_size"?: number, "window_overlap"?: number }`
+Body: `{ "base_url"?: string, "model"?: string, "window_size"?: number, "window_overlap"?: number, "frame_stride"?: number }`
 Returns updated settings object.
+
+#### Defaults
+
+These are the values the backend uses until they are changed in Settings. They
+come from `backend/app/config.py`, and `backend/tests/test_api_contract_defaults.py`
+fails if this table and that file disagree.
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `base_url` | `http://localhost:11434` | Ollama server |
+| `model` | `qwen3-vl:8b` | Vision model |
+| `window_size` | `4` | Frames per Ollama request in windowed mode |
+| `window_overlap` | `0` | Frames shared between neighbouring windows in windowed mode |
+| `frame_stride` | `3` | Analyze every Nth frame (`1` = every frame) |
+
+The backend sets `ANALYZE_FRAMES_INDIVIDUALLY = True`. In that mode each sampled
+frame is sent on its own, chosen by `frame_stride`, and `window_size` and
+`window_overlap` are not used. They apply only if that constant is changed to
+`False`.
 
 ## Analyses
 
@@ -42,7 +62,8 @@ multipart/form-data: `file` (video)
 Returns: `Analysis` with video metadata (status=`uploaded`)
 
 ### POST /api/analyses/{id}/start
-Body (optional): `{ "model"?: string, "window_size"?: number, "window_overlap"?: number }`
+Body (optional): `{ "model"?: string, "window_size"?: number, "window_overlap"?: number, "frame_stride"?: number }`
+Omitted fields fall back to the saved settings (see Defaults above).
 Starts background analysis. Returns `{ "status": "analyzing" }`
 
 ### POST /api/analyses/{id}/cancel
