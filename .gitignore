@@ -44,3 +44,12 @@ balltrace/frontend/node_modules/
 # Tool caches
 .mypy_cache/
 *.tsbuildinfo
+
+# Android capture app
+android/.gradle/
+android/local.properties
+android/.idea/
+android/.cxx/
+android/captures/
+*.apk
+*.aab
