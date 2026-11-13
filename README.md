@@ -116,7 +116,7 @@ config/default.yaml        pitch, camera, detection, physics, paths
 docs/                      CAPTURE_PROTOCOL.md, GROUND_TRUTH.md, ACCURACY.md, media/
 data/ground_truth/         label schema and CSV template
 scripts/                   calibrate_stumps.py, analyze_delivery.py, analyze_capture.py, run_session_app.py
-src/balltracker/           package source; cli.py is the balltracker command
+src/balltracker/           package source; cli.py is the balltracker command, app/ is the Streamlit app
 tests/                     pytest suite
 android/                   capture app (Kotlin, Compose)
 balltrace/                 BallTrace backend (FastAPI) and frontend (React/Vite)

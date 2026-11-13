@@ -23,12 +23,12 @@ Not verified by any automated check:
 
 - Behaviour against a real Ollama server and a real vision model. The client and pipeline are tested only against a fake server (`httpx.MockTransport`); the real model's answers, speed and timeouts are not covered.
 - MediaPipe pose release seeding on real footage (`src/balltracker/release.py`); the only test asserts `mediapipe_available()` returns a bool.
-- The Streamlit session app on real clips; `scripts/run_session_app.py` has no test. Only the failure messages it shows are tested (`tests/test_user_messages.py`).
+- The Streamlit session app on real clips. It is driven headlessly on a synthetic clip (`tests/test_session_app.py`, Streamlit AppTest), but clicks on the picture come from a custom component AppTest cannot click, so the tests place points and marks through session state.
 - Accuracy against radar or measured bounce markers. Every accuracy test runs on synthetic deliveries from `src/balltracker/synthetic.py`.
 
 ## Known gaps and bugs
 
-- Oversized files: `scripts/run_session_app.py` (830 lines), `src/balltracker/tracking.py` (598). `track_delivery_hybrid` (`tracking.py:225` to `:432`) is one ~200-line function.
+- Oversized files: ~~`scripts/run_session_app.py` (830 lines), `src/balltracker/tracking.py` (598)~~ split on 2026-11-13 into `src/balltracker/app/` and `tracking_core.py` / `tracking_hybrid.py` / `tracking_manual.py`. Still over 500 lines: `android/.../camera/CameraController.kt` (817). Python functions still over 75 lines (AST count, 2026-11-13): `pipeline.analyze_delivery` (120), `physics._fit_segment` (102), `physics.fit_trajectory` (101), `pipeline.analyze_from_track` (97), `viz.render_overlay_video` (96), `export_service.export_trajectory_video` (90), `detection._score_motion_candidates` (85), `detection.detect_video` (85), `calibrate_stumps._interactive_points` (80), `capture_analysis.analyze_capture` (77), `release._wrist_track_tasks` (77), `viz.draw_pitch_map` (77).
 - `data/ground_truth/template.csv` is a header line only; no labelled real delivery exists in the repo, so `evaluate_against_gt` in `src/balltracker/pipeline.py` only ever runs on synthetic data.
 - `useVideoPlayer` attached listeners via `[videoRef.current]` in the effect deps (fixed this commit with a callback ref; the linter's suggested `[]` would have missed the `<video>` element that mounts only after upload).
 
@@ -52,8 +52,9 @@ Done when: `pytest tests/ -q -m real` passes against the labelled set and the RE
 
 ### M3. Break up the oversized modules
 
-- [ ] Split `scripts/run_session_app.py` into per-tab modules under `src/balltracker/app/` (calibrate, analyze, session review).
-- [ ] Split `track_delivery_hybrid` into seed, gated-detect and CSRT-fallback functions, each under 75 lines.
+- [x] Split `scripts/run_session_app.py` into per-step modules under `src/balltracker/app/` (setup, analyze, mark, result, plus `logic` and `images` for the non-UI parts), behind headless app tests.
+- [x] Split `track_delivery_hybrid` into seed, gated-detect and CSRT-fallback functions, each under 75 lines, behind characterisation tests and exact pins (`tests/test_tracker_pins.py`).
+- [ ] Split `android/.../camera/CameraController.kt` (817 lines).
 
 Done when: `wc -l` shows no source file over 500 lines, and the root and backend test suites still pass.
 
