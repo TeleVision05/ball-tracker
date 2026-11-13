@@ -1,5 +1,6 @@
 """Tests for frame<->timestamp conversions and sliding-window computation
 (app/services/video.py)."""
+
 from __future__ import annotations
 
 import pytest

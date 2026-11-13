@@ -98,7 +98,9 @@ def _random_delivery(rng: np.random.Generator) -> DeliveryParams:
     length_target = float(rng.uniform(4.0, 9.0))
 
     release_pos = np.array([release_x, release_y, release_z], dtype=np.float64)
-    direction = np.array([line_offset, PITCH_LENGTH_M - length_target - release_y, -0.6], dtype=np.float64)
+    direction = np.array(
+        [line_offset, PITCH_LENGTH_M - length_target - release_y, -0.6], dtype=np.float64
+    )
     direction /= np.linalg.norm(direction)
     release_vel = direction * speed_m_s
 
@@ -235,7 +237,10 @@ def render_delivery_video(
 
         if not np.any(np.isnan(uv)):
             centre = (int(np.clip(uv[0], 0, w - 1)), int(np.clip(uv[1], 0, h - 1)))
-            radius = max(4, int(BALL_RADIUS_M * camera.intrinsic_matrix()[0, 0] / max(positions[idx, 1], 1.0)))
+            radius = max(
+                4,
+                int(BALL_RADIUS_M * camera.intrinsic_matrix()[0, 0] / max(positions[idx, 1], 1.0)),
+            )
             cv2.circle(frame, centre, radius, (0, 0, 255), -1)
 
         writer.write(frame)
@@ -328,7 +333,9 @@ def generate_batch(out_dir: Path, n: int, fps: int, seed: int = 42) -> pd.DataFr
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="Generate synthetic cricket delivery validation data")
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic cricket delivery validation data"
+    )
     parser.add_argument("--out", type=Path, required=True, help="Output directory")
     parser.add_argument("--n", type=int, default=5, help="Number of deliveries")
     parser.add_argument("--fps", type=int, default=120, help="Video frame rate")

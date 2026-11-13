@@ -1,4 +1,5 @@
 """FastAPI application entrypoint: app instance, CORS, and startup lifespan."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

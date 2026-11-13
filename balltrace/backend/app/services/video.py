@@ -5,6 +5,7 @@ OpenCV is used ONLY for mechanical frame IO and drawing here -- it never
 makes ball-detection decisions. That job belongs entirely to the Ollama
 vision model (see services/ollama_client.py).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -119,9 +120,7 @@ def extract_frames_bgr(path: str | Path, start: int, end: int) -> List[np.ndarra
     return frames
 
 
-def extract_frames_jpeg(
-    path: str | Path, start: int, end: int, quality: int = 85
-) -> List[bytes]:
+def extract_frames_jpeg(path: str | Path, start: int, end: int, quality: int = 85) -> List[bytes]:
     """Extract frames [start, end) from the video as JPEG-encoded bytes."""
     frames: List[bytes] = []
     for frame in extract_frames_bgr(path, start, end):

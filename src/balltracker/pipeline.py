@@ -182,7 +182,9 @@ def analyze_delivery(
     container_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     cap.release()
-    fps_val = float(fps if fps else (container_fps if container_fps > 1 else config["camera"]["fps"]))
+    fps_val = float(
+        fps if fps else (container_fps if container_fps > 1 else config["camera"]["fps"])
+    )
 
     if end_frame is None:
         end_frame = max(0, total_frames - 1)
@@ -191,11 +193,7 @@ def analyze_delivery(
 
     track: list[TrackPoint]
     if use_companion_track and gt is not None and "track_2d_px" in gt:
-        track = [
-            tp
-            for tp in _track_from_gt_json(gt)
-            if start_frame <= tp.frame_idx <= end_frame
-        ]
+        track = [tp for tp in _track_from_gt_json(gt) if start_frame <= tp.frame_idx <= end_frame]
     else:
         track = track_video(
             video_path,
@@ -254,7 +252,9 @@ def analyze_delivery(
         "fit": {
             "reprojection_rmse_px": fit.reprojection_rmse,
             "bounce_time_s": fit.bounce_time_s,
-            "bounce_position_m": fit.bounce_pos_m.tolist() if fit.bounce_pos_m is not None else None,
+            "bounce_position_m": fit.bounce_pos_m.tolist()
+            if fit.bounce_pos_m is not None
+            else None,
             "release_position_m": fit.pre.x0.tolist(),
             "release_velocity_m_s": fit.pre.v0.tolist(),
         },
@@ -302,7 +302,12 @@ def analyze_from_track(
     if end_frame is None and track:
         end_frame = max(tp.frame_idx for tp in track)
     start_frame = int(max(0, start_frame or 0))
-    end_frame = int(min(end_frame if end_frame is not None else max(0, total_frames - 1), max(0, total_frames - 1)))
+    end_frame = int(
+        min(
+            end_frame if end_frame is not None else max(0, total_frames - 1),
+            max(0, total_frames - 1),
+        )
+    )
 
     if len(track) < 5:
         raise RuntimeError(
@@ -345,7 +350,9 @@ def analyze_from_track(
         "fit": {
             "reprojection_rmse_px": fit.reprojection_rmse,
             "bounce_time_s": fit.bounce_time_s,
-            "bounce_position_m": fit.bounce_pos_m.tolist() if fit.bounce_pos_m is not None else None,
+            "bounce_position_m": fit.bounce_pos_m.tolist()
+            if fit.bounce_pos_m is not None
+            else None,
             "release_position_m": fit.pre.x0.tolist(),
             "release_velocity_m_s": fit.pre.v0.tolist(),
         },

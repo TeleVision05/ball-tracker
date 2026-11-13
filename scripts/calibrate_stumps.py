@@ -161,8 +161,7 @@ def main() -> int:
             image_points = _interactive_points(frame)
         except cv2.error as exc:
             print(
-                f"OpenCV GUI unavailable ({exc}). "
-                "Use the Streamlit UI or --points points.json.",
+                f"OpenCV GUI unavailable ({exc}). Use the Streamlit UI or --points points.json.",
                 file=sys.stderr,
             )
             return 1

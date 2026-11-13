@@ -2,6 +2,7 @@
 breaking the line wherever the gap between consecutive visible frames is
 too large to plausibly represent the same, continuously-tracked ball flight.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -15,9 +16,7 @@ def should_connect(frame_a: int, frame_b: int, max_gap_frames: int) -> bool:
     return (frame_b - frame_a) <= max_gap_frames
 
 
-def build_trajectory_segments(
-    detections: List[Point], max_gap_frames: int
-) -> List[List[Point]]:
+def build_trajectory_segments(detections: List[Point], max_gap_frames: int) -> List[List[Point]]:
     """Group visible detections (sorted by frame_index) into segments.
 
     A new segment starts whenever the frame gap between consecutive visible

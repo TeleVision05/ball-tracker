@@ -47,11 +47,7 @@ def main() -> None:
 
     print(f"Wrote analysis to {args.out}")
     summary = result.get("summary")
-    if (
-        isinstance(summary, dict)
-        and "speed_text" in summary
-        and "bounce_text" in summary
-    ):
+    if isinstance(summary, dict) and "speed_text" in summary and "bounce_text" in summary:
         print(f"{summary['speed_text']} | {summary['bounce_text']}")
     else:
         metrics = result["metrics"]

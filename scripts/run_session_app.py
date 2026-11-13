@@ -187,9 +187,7 @@ def _annotated_mark_image(
         scale = 1.0
 
     # Trail of nearby clicks
-    nearby = sorted(
-        f for f in clicks if abs(int(f) - current_frame) <= trail_frames
-    )
+    nearby = sorted(f for f in clicks if abs(int(f) - current_frame) <= trail_frames)
     pts = []
     for f in nearby:
         uv = clicks[f]
@@ -265,6 +263,7 @@ def _advance_mark_frame(video_name: str | None = None) -> None:
         _set_mark_frame(nxt, video_name)
     else:
         st.session_state._prev_mark_click = None
+
 
 # ---------------------------------------------------------------------------
 # Sidebar: minimal — video upload/folder + session
@@ -385,9 +384,7 @@ if st.session_state.ui_step == "setup":
             else:
                 st.success("All points placed — save when ready.")
 
-            display_img, scale = _annotated_display_image(
-                st.session_state.calib_frame_bgr, points
-            )
+            display_img, scale = _annotated_display_image(st.session_state.calib_frame_bgr, points)
             st.session_state.calib_display_scale = scale
 
             click = streamlit_image_coordinates(
@@ -424,7 +421,12 @@ if st.session_state.ui_step == "setup":
                     st.rerun()
             with b3:
                 save_disabled = len(points) < MIN_LANDMARKS
-                if st.button("Save camera setup", type="primary", disabled=save_disabled, use_container_width=True):
+                if st.button(
+                    "Save camera setup",
+                    type="primary",
+                    disabled=save_disabled,
+                    use_container_width=True,
+                ):
                     try:
                         _calib, rmse = calibrate_from_points(
                             {k: np.asarray(v) for k, v in points.items()},
@@ -436,7 +438,9 @@ if st.session_state.ui_step == "setup":
                         if rmse <= WARN_RMSE_PX:
                             st.success("Looks good — camera setup saved.")
                         else:
-                            st.warning("Saved, but try clicking more carefully if results look off.")
+                            st.warning(
+                                "Saved, but try clicking more carefully if results look off."
+                            )
                         _goto("analyze")
                         st.rerun()
                     except ValueError:
@@ -496,9 +500,7 @@ elif st.session_state.ui_step == "analyze":
             pred = predict_ball_uv(click_tuples, frame_f, fps_v)
 
         if frame_bgr is not None:
-            display_img, scale = _annotated_mark_image(
-                frame_bgr, clicks, frame_f, prediction=pred
-            )
+            display_img, scale = _annotated_mark_image(frame_bgr, clicks, frame_f, prediction=pred)
             click = streamlit_image_coordinates(
                 display_img,
                 key=f"mark_click_{video_name}_{frame_f}",
@@ -578,9 +580,7 @@ elif st.session_state.ui_step == "analyze":
                 disabled=not ready,
                 help="Need at least 5 marked frames",
             ):
-                click_tuples = {
-                    int(f): (float(uv[0]), float(uv[1])) for f, uv in clicks.items()
-                }
+                click_tuples = {int(f): (float(uv[0]), float(uv[1])) for f, uv in clicks.items()}
                 track = track_from_clicks(click_tuples, fps=fps_v, fill_gaps=True)
                 if st.session_state.session is None:
                     st.session_state.session = create_session(root=sessions_root)
@@ -772,7 +772,9 @@ else:
                 selected = st.selectbox(
                     "Previous deliveries",
                     delivery_ids,
-                    index=delivery_ids.index(default_id) if default_id in delivery_ids else len(delivery_ids) - 1,
+                    index=delivery_ids.index(default_id)
+                    if default_id in delivery_ids
+                    else len(delivery_ids) - 1,
                 )
             else:
                 selected = delivery_ids[0]
@@ -801,7 +803,11 @@ else:
                 overlay = sel_rec.get("overlay_path")
                 overlay_path = Path(overlay) if overlay else None
                 played = False
-                if overlay_path is not None and overlay_path.exists() and overlay_path.stat().st_size > 0:
+                if (
+                    overlay_path is not None
+                    and overlay_path.exists()
+                    and overlay_path.stat().st_size > 0
+                ):
                     try:
                         overlay_path = ensure_web_playable(overlay_path)
                         st.video(overlay_path.read_bytes())

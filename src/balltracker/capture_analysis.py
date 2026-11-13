@@ -40,9 +40,7 @@ def resolve_capture_video(
     else:
         resolved = Path(sidecar_path).parent / sidecar.videoFile
     if not resolved.exists():
-        raise FileNotFoundError(
-            f"Sidecar was read but the video file is required: {resolved}"
-        )
+        raise FileNotFoundError(f"Sidecar was read but the video file is required: {resolved}")
     return resolved
 
 

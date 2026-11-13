@@ -103,7 +103,9 @@ def detect_ball_white(frame_bgr: np.ndarray, config: dict | None = None) -> Ball
 
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     # Low saturation, high value = white / bright leather.
-    mask = cv2.inRange(hsv, np.array([0, 0, 175], dtype=np.uint8), np.array([180, 70, 255], dtype=np.uint8))
+    mask = cv2.inRange(
+        hsv, np.array([0, 0, 175], dtype=np.uint8), np.array([180, 70, 255], dtype=np.uint8)
+    )
     return _best_circular_blob(mask, min_r, max_r, conf_thresh, frame_bgr.shape)
 
 

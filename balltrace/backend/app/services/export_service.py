@@ -5,6 +5,7 @@ then (when available) shells out to ffmpeg to transcode the OpenCV-written
 file into a broadly-compatible H.264 MP4. OpenCV is used purely for
 mechanical frame IO/drawing here -- never for ball detection.
 """
+
 from __future__ import annotations
 
 import csv

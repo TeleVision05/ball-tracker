@@ -3,6 +3,7 @@
 All paths are resolved relative to this file so the app works regardless of
 the current working directory it is launched from.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

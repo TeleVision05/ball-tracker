@@ -51,9 +51,7 @@ def propagate(segment: FlightSegment, times_relative: np.ndarray, g: float = 9.8
             positions[i, 0] = x0[0] + v0[0] * (1.0 - exp_ct) / c
             positions[i, 1] = x0[1] + v0[1] * (1.0 - exp_ct) / c
             positions[i, 2] = (
-                x0[2]
-                + v0[2] * (1.0 - exp_ct) / c
-                - g * (ti / c - (1.0 - exp_ct) / (c * c))
+                x0[2] + v0[2] * (1.0 - exp_ct) / c - g * (ti / c - (1.0 - exp_ct) / (c * c))
             )
     return positions
 
@@ -190,6 +188,7 @@ def _fit_segment(
         p0 = pack(v0_init, 0.0)
         x0_fixed = x0_init.copy()
     else:
+
         def unpack(params: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
             x0 = params[:3]
             v0 = params[3:6]
@@ -221,10 +220,7 @@ def _fit_segment(
         valid = np.isfinite(proj).all(axis=1)
         reproj = (proj[valid] - uvs[valid]).ravel()
         ray_res = np.array(
-            [
-                20.0 * _ray_point_distance(pos[i], origins_a[i], dirs_a[i])
-                for i in range(len(pos))
-            ],
+            [20.0 * _ray_point_distance(pos[i], origins_a[i], dirs_a[i]) for i in range(len(pos))],
             dtype=np.float64,
         )
         extra: list[float] = []

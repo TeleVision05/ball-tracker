@@ -5,6 +5,7 @@ Ollama (via qwen3-vl or any other local vision model) is the ONLY ball
 detector in this system. This module never inspects pixel values itself --
 it only talks to the model and validates/repairs the JSON it sends back.
 """
+
 from __future__ import annotations
 
 import json
@@ -296,7 +297,6 @@ class OllamaClient:
             prompt,
             [contact_sheet_b64],
             correction_extra=(
-                f"There are exactly {frame_count} panels "
-                f"(frame_index 0..{frame_count - 1})."
+                f"There are exactly {frame_count} panels (frame_index 0..{frame_count - 1})."
             ),
         )

@@ -1,4 +1,5 @@
 """Tests for trajectory segmenting/gap-handling logic."""
+
 from __future__ import annotations
 
 from app.services.trajectory import build_trajectory_segments, should_connect

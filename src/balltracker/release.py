@@ -180,7 +180,9 @@ def _wrist_track_tasks(
             if (frame_idx - start_frame) % max(1, stride) == 0:
                 h, w = frame.shape[:2]
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
+                mp_image = mp.Image(
+                    image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb)
+                )
                 timestamp_ms = int(round(frame_idx * 1000.0 / max(fps, 1e-6)))
                 result = landmarker.detect_for_video(mp_image, timestamp_ms)
                 if result.pose_landmarks:

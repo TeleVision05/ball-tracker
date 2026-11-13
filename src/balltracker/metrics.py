@@ -99,9 +99,7 @@ def compute_metrics(
         v_actual = v_no_spin
 
     turn_m = float(v_actual[0] - v_no_spin[0]) * 0.5  # rough lateral metres proxy
-    turn_deg = float(
-        math.degrees(_horizontal_heading(v_actual) - _horizontal_heading(v_no_spin))
-    )
+    turn_deg = float(math.degrees(_horizontal_heading(v_actual) - _horizontal_heading(v_no_spin)))
 
     confidence = {
         "trajectory_fit_ok": fit.reprojection_rmse < 15.0,

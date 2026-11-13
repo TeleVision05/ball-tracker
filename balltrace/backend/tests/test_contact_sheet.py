@@ -1,4 +1,5 @@
 """Tests for contact-sheet construction and coordinate remapping."""
+
 from __future__ import annotations
 
 import numpy as np

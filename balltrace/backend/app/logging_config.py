@@ -1,4 +1,5 @@
 """Structured logging setup for the BallTrace backend."""
+
 from __future__ import annotations
 
 import logging

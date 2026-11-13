@@ -8,6 +8,7 @@ also slow. Optimizations:
 * Never re-analyze the same frame just because windows overlap.
 * Downscale frames before Ollama; scale coordinates back afterwards.
 """
+
 from __future__ import annotations
 
 import logging
@@ -129,9 +130,7 @@ async def run_analysis(
                 try:
                     frames_bgr = extract_frames_bgr(video_path, frame_index, frame_index + 1)
                     if not frames_bgr:
-                        progress.append_log(
-                            analysis_id, f"frame={frame_index} missing, skipping"
-                        )
+                        progress.append_log(analysis_id, f"frame={frame_index} missing, skipping")
                         progress.update(analysis_id, current_window=job_index + 1)
                         continue
 
@@ -193,16 +192,13 @@ async def run_analysis(
             for window_index, (start, end) in enumerate(windows):
                 if progress.is_cancelled(analysis_id):
                     cancelled = True
-                    progress.append_log(
-                        analysis_id, f"Cancelled before window {window_index}"
-                    )
+                    progress.append_log(analysis_id, f"Cancelled before window {window_index}")
                     break
 
                 progress.update(analysis_id, current_window=window_index)
                 progress.append_log(
                     analysis_id,
-                    f"window {window_index + 1}/{total_windows} "
-                    f"frames=[{start},{end}) → Ollama",
+                    f"window {window_index + 1}/{total_windows} frames=[{start},{end}) → Ollama",
                 )
 
                 try:
@@ -253,9 +249,7 @@ async def run_analysis(
                 )
 
         merged_raw = merge.merge_detections(all_raw)
-        detection_records = [
-            build_detection_record(raw, fps, width, height) for raw in merged_raw
-        ]
+        detection_records = [build_detection_record(raw, fps, width, height) for raw in merged_raw]
 
         await db.clear_detections(analysis_id)
         await db.insert_detections(analysis_id, detection_records)

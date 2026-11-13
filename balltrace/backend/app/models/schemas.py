@@ -1,5 +1,6 @@
 """Pydantic models: both the public API contract models and the internal
 models used to validate raw Ollama vision responses."""
+
 from __future__ import annotations
 
 from typing import List, Optional

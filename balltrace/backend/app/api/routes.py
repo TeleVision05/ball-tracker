@@ -1,4 +1,5 @@
 """All BallTrace API endpoints, implementing balltrace/API_CONTRACT.md."""
+
 from __future__ import annotations
 
 import asyncio
@@ -213,7 +214,9 @@ async def start_analysis(analysis_id: str, payload: StartAnalysisRequest = Start
         payload.window_overlap if payload.window_overlap is not None else settings["window_overlap"]
     )
     frame_stride = (
-        payload.frame_stride if payload.frame_stride is not None else settings.get("frame_stride", 3)
+        payload.frame_stride
+        if payload.frame_stride is not None
+        else settings.get("frame_stride", 3)
     )
     frame_stride = max(1, int(frame_stride))
 

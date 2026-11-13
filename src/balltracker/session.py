@@ -170,8 +170,12 @@ def list_deliveries(session: Session) -> list[dict]:
                 "delivery_id": sub.name,
                 "source_video_path": analysis.get("video_path"),
                 "analysis_path": str(analysis_path),
-                "overlay_path": str(sub / "overlay.mp4") if (sub / "overlay.mp4").exists() else None,
-                "pitch_map_path": str(sub / "pitch_map.png") if (sub / "pitch_map.png").exists() else None,
+                "overlay_path": str(sub / "overlay.mp4")
+                if (sub / "overlay.mp4").exists()
+                else None,
+                "pitch_map_path": str(sub / "pitch_map.png")
+                if (sub / "pitch_map.png").exists()
+                else None,
                 "metrics": analysis.get("metrics", {}),
             }
         )

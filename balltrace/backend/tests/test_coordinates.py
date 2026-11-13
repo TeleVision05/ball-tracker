@@ -1,5 +1,6 @@
 """Tests for normalized coordinate computation and full detection record
 construction (app/services/analysis_pipeline.py)."""
+
 from __future__ import annotations
 
 import pytest
