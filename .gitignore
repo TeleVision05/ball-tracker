@@ -14,6 +14,8 @@ data/raw/*
 data/raw/real/*
 !data/raw/real/README.md
 data/synthetic/
+# balltracker demo output
+out/
 models/*.pt
 models/*.task
 sessions/
