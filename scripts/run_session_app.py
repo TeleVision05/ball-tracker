@@ -25,6 +25,7 @@ for _name in list(sys.modules):
 
 from balltracker.calib_io import load_calibration
 from balltracker.config import load_config
+from balltracker.errors import VideoOpenError
 from balltracker.flight_window import suggest_flight_window
 from balltracker.landmarks import (
     LANDMARK_ORDER,
@@ -44,6 +45,7 @@ from balltracker.session import (
     load_session,
 )
 from balltracker.tracking import predict_ball_uv, track_from_clicks
+from balltracker.user_messages import describe_error
 from balltracker.viz import draw_pitch_map, ensure_web_playable
 
 st.set_page_config(page_title="BallTracker", layout="wide")
@@ -96,7 +98,7 @@ def _list_videos(folder: Path) -> list[Path]:
 def _read_video_frame(video_path: Path, frame_idx: int) -> tuple[np.ndarray, tuple[int, int]]:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
     n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_idx = int(np.clip(frame_idx, 0, max(0, n - 1)))
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -105,7 +107,7 @@ def _read_video_frame(video_path: Path, frame_idx: int) -> tuple[np.ndarray, tup
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
     if not ok or frame is None:
-        raise RuntimeError(f"Cannot read frame {frame_idx}")
+        raise VideoOpenError(f"Cannot read frame {frame_idx}")
     return frame, (w, h)
 
 
@@ -372,7 +374,7 @@ if st.session_state.ui_step == "setup":
                 st.session_state.calib_rmse = None
                 st.session_state._prev_click_coord = None
             except RuntimeError as exc:
-                st.error(str(exc))
+                st.error(describe_error(exc, "loading the setup picture"))
 
         if st.session_state.calib_frame_bgr is not None:
             points: dict = st.session_state.calib_points
@@ -443,8 +445,8 @@ if st.session_state.ui_step == "setup":
                             )
                         _goto("analyze")
                         st.rerun()
-                    except ValueError:
-                        st.error("Try again — click closer to the stump tips and bases.")
+                    except (ValueError, RuntimeError) as exc:
+                        st.error(describe_error(exc, "saving the camera setup"))
 
 # ===========================================================================
 # Step 2 — Analyze a ball (manual click tracking)
@@ -491,7 +493,7 @@ elif st.session_state.ui_step == "analyze":
         try:
             frame_bgr, _ = _read_video_frame(mark_path, frame_f)
         except RuntimeError as exc:
-            st.error(str(exc))
+            st.error(describe_error(exc, "loading a frame to mark"))
             frame_bgr = None
 
         pred = None
@@ -605,7 +607,7 @@ elif st.session_state.ui_step == "analyze":
                         _goto("result")
                         st.rerun()
                     except Exception as exc:  # noqa: BLE001
-                        st.error(f"Couldn't calculate from those clicks: {exc}")
+                        st.error(describe_error(exc, "calculating from the marked clicks"))
 
         if not ready:
             st.caption(f"Mark at least **5** frames ({5 - n_clicked} more) to calculate.")
@@ -665,7 +667,7 @@ elif st.session_state.ui_step == "analyze":
                     )
                 st.image(prev_rgb, use_container_width=True)
             except RuntimeError as exc:
-                st.error(str(exc))
+                st.error(describe_error(exc, "loading the preview frame"))
 
             c1, c2 = st.columns(2)
             with c1:
@@ -744,7 +746,7 @@ elif st.session_state.ui_step == "analyze":
                             _goto("result")
                             st.rerun()
                         except Exception as exc:  # noqa: BLE001
-                            st.error(f"Couldn't analyze that clip: {exc}")
+                            st.error(describe_error(exc, "analyzing the clip"))
 
 # ===========================================================================
 # Step 3 — See result
@@ -813,7 +815,11 @@ else:
                         st.video(overlay_path.read_bytes())
                         played = True
                     except Exception as exc:  # noqa: BLE001
-                        st.warning(f"Could not play the video: {exc}")
+                        describe_error(exc, "preparing the replay video")
+                        st.warning(
+                            "We couldn't play the replay here, but your result is saved. "
+                            "Try again, or open the clip from the sessions folder."
+                        )
                 if not played:
                     src = sel_rec.get("source_video_path")
                     src_path = Path(src) if src else None

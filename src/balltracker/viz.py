@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 
+from .errors import VideoOpenError
 from .pitch import PITCH_LENGTH_M, STUMP_HEIGHT_M, STUMP_WIDTH_M
 
 PITCH_CORRIDOR_M = 3.0
@@ -291,7 +292,7 @@ def render_overlay_video(
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 120.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))

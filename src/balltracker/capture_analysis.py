@@ -15,6 +15,7 @@ from .capture_sidecar import (
     calibrate_from_capture,
     load_capture_sidecar,
 )
+from .errors import NoBallFoundError, VideoOpenError
 from .config import load_config
 from .metrics import compute_metrics, metrics_to_dict
 from .physics import fit_trajectory
@@ -95,7 +96,7 @@ def analyze_capture(
     if _use_presentation_clock(sidecar, track):
         track = apply_presentation_times(track, timestamps)
     if len(track) < 5:
-        raise RuntimeError(f"Insufficient track points ({len(track)}) in {video}")
+        raise NoBallFoundError(f"Insufficient track points ({len(track)}) in {video}")
 
     physics = config.get("physics", {})
     g = float(physics.get("gravity_m_s2", 9.81))
@@ -220,7 +221,7 @@ def _open_encoded_capture(video_path: Path) -> cv2.VideoCapture:
     """Open the encoded buffer with container display rotation left off."""
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
     prop = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
     if prop is not None:
         capture.set(prop, 0)
@@ -248,7 +249,7 @@ def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tupl
     try:
         ok, frame = capture.read()
         if not ok:
-            raise RuntimeError(f"Cannot read frames from {video_path}")
+            raise VideoOpenError(f"Cannot read frames from {video_path}")
         upright = cv2.rotate(frame, rotate_code)
         height, width = upright.shape[:2]
         writer = cv2.VideoWriter(

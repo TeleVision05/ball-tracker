@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .errors import VideoOpenError
 from .config import load_config
 
 
@@ -288,7 +289,7 @@ def detect_video(
         config = load_config()
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
 
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if end_frame is None or end_frame < 0:

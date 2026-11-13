@@ -14,6 +14,7 @@ from .calibration import (
     solve_pnp,
 )
 from .config import load_config
+from .errors import CalibrationMissingError, NoBallFoundError
 from .metrics import compute_metrics, metrics_to_dict
 from .physics import fit_trajectory
 from .pitch import stump_landmarks_3d
@@ -136,7 +137,7 @@ def resolve_calibration(
         if calib_from_json is not None:
             return calib_from_json
 
-    raise RuntimeError(
+    raise CalibrationMissingError(
         f"No camera calibration found for {video_path}. "
         "Run: python scripts/calibrate_stumps.py --video <path> --out <path.calib.json>"
     )
@@ -205,7 +206,7 @@ def analyze_delivery(
         )
 
     if len(track) < 5:
-        raise RuntimeError(
+        raise NoBallFoundError(
             f"Insufficient track points ({len(track)}) in {video_path} "
             f"for frames [{start_frame}, {end_frame}]. "
             "The hybrid tracker (method='auto') seeds its search from a "
@@ -310,7 +311,7 @@ def analyze_from_track(
     )
 
     if len(track) < 5:
-        raise RuntimeError(
+        raise NoBallFoundError(
             f"Insufficient track points ({len(track)}). "
             "Mark the ball on at least 5 frames, then calculate."
         )

@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from .config import load_config
+from .errors import CalibrationFailedError, CalibrationInputError
 from .pitch import stump_landmarks_3d
 from .synthetic import CameraModel
 
@@ -88,6 +89,29 @@ def is_calibration_acceptable(rmse_px: float, max_rmse: float = 5.0) -> bool:
     return rmse_px <= max_rmse
 
 
+def _solve_pose(
+    pts_3d: np.ndarray, pts_2d: np.ndarray, K: np.ndarray, dist: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run PnP (falling back to RANSAC); any OpenCV failure becomes a typed error."""
+    try:
+        ok, rvec, tvec = cv2.solvePnP(pts_3d, pts_2d, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+        if not ok:
+            ok, rvec, tvec, _ = cv2.solvePnPRansac(
+                pts_3d,
+                pts_2d,
+                K,
+                dist,
+                iterationsCount=200,
+                reprojectionError=8.0,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+    except cv2.error as exc:
+        raise CalibrationFailedError(f"solvePnP rejected the landmark points: {exc}") from exc
+    if not ok:
+        raise CalibrationFailedError("solvePnP failed to estimate camera pose")
+    return rvec, tvec
+
+
 def solve_pnp(
     image_points: dict[str, np.ndarray],
     landmarks_3d: dict[str, np.ndarray] | None = None,
@@ -101,7 +125,7 @@ def solve_pnp(
 
     keys = sorted(k for k in image_points if k in landmarks_3d)
     if len(keys) < 4:
-        raise ValueError(f"Need at least 4 landmark correspondences, got {len(keys)}")
+        raise CalibrationInputError(f"Need at least 4 landmark correspondences, got {len(keys)}")
 
     pts_2d = np.array([image_points[k][:2] for k in keys], dtype=np.float64)
     pts_3d = np.array([landmarks_3d[k] for k in keys], dtype=np.float64)
@@ -117,25 +141,7 @@ def solve_pnp(
         K = _intrinsic_from_fov(image_size, fov_deg)
 
     dist = np.zeros(5, dtype=np.float64)
-    ok, rvec, tvec = cv2.solvePnP(
-        pts_3d,
-        pts_2d,
-        K,
-        dist,
-        flags=cv2.SOLVEPNP_ITERATIVE,
-    )
-    if not ok:
-        ok, rvec, tvec, _ = cv2.solvePnPRansac(
-            pts_3d,
-            pts_2d,
-            K,
-            dist,
-            iterationsCount=200,
-            reprojectionError=8.0,
-            flags=cv2.SOLVEPNP_ITERATIVE,
-        )
-    if not ok:
-        raise RuntimeError("solvePnP failed to estimate camera pose")
+    rvec, tvec = _solve_pose(pts_3d, pts_2d, K, dist)
 
     R, _ = cv2.Rodrigues(rvec)
     t = tvec.reshape(3)

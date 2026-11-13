@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .errors import VideoOpenError
 from .config import load_config
 from .detection import (
     BallDetection,
@@ -244,7 +245,7 @@ def track_delivery_hybrid(
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     fps_val = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
     if fps is None:
