@@ -8,7 +8,7 @@ used anywhere in this service.
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11 or 3.12
 - [Ollama](https://ollama.com) running locally with a vision-capable model
   pulled (default expects `qwen3-vl:8b`: `ollama pull qwen3-vl:8b`)
 - `ffmpeg` on `PATH` (optional, but recommended for broadly-compatible MP4

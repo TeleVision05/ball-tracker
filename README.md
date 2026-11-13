@@ -1,26 +1,30 @@
 # BallTracker
 
+[![CI](https://github.com/TeleVision05/ball-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/TeleVision05/ball-tracker/actions/workflows/ci.yml)
+
 Cricket bowling analytics from behind-the-stumps video: stump-anchored camera calibration, ball detection and tracking, a bounce-segmented physics fit, and metrics (release speed, swing, post-bounce turn, pitch line and length) with plain-language summaries.
 
-**Status: working (2026-10-08).** Root tests and 43 backend tests pass; the frontend builds. Phone captures can be analysed from their sidecar. Accuracy is validated on synthetic deliveries only. See [ROADMAP.md](ROADMAP.md).
+**Status: working.** CI runs the tests, lint and builds on every pull request and push to `main` (see the badge above). Phone captures can be analysed from their sidecar. Accuracy is validated on synthetic deliveries only. See [ROADMAP.md](ROADMAP.md).
 
 > **BallTrace** (a separate local-first UI that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md). It has its own README.
 
 ## Requirements
 
-- Python 3.10+ (the checked-in `.venv` is 3.14)
+- Python 3.11 or 3.12
 - For BallTrace only: Node.js 18+, [Ollama](https://ollama.com) with `qwen3-vl:8b`, optional FFmpeg
 
 ## Install
 
 ```bash
 cd BallTracker
-python3 -m venv .venv
+python3.12 -m venv .venv   # or python3.11
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-Or without dev extras: `pip install -r requirements.txt && pip install -e .`
+This editable install with the `dev` extra is the only install path. `requirements.txt` points at it, and `pyproject.toml` holds every dependency and version bound.
+
+To run the commit checks locally, install the hooks once: `pre-commit install`. They run ruff (check and format) on all Python and oxlint on `balltrace/frontend`; `pre-commit run --all-files` runs them on everything. The frontend hook needs `npm ci` in `balltrace/frontend` first.
 
 ## Configure
 
@@ -61,9 +65,9 @@ Filming and calibration guidance: [docs/CAPTURE_PROTOCOL.md](docs/CAPTURE_PROTOC
 
 ```bash
 pytest tests/ -q                                 # analytics package
-cd balltrace/backend && pytest -q                # BallTrace backend (43 tests)
+cd balltrace/backend && pytest -q                # BallTrace backend
 cd balltrace/frontend && npm run lint && npm run build
-ruff check .
+ruff check . && ruff format --check .
 ```
 
 Backend tests need no Ollama, ffmpeg or video file.
@@ -91,4 +95,4 @@ balltrace/                 BallTrace backend (FastAPI) and frontend (React/Vite)
 
 ## License
 
-Private / research use.
+[MIT](LICENSE), copyright 2026 Tarun Vadapalli. The licence covers the code only. Video footage and capture sessions are not part of the repository and must never be committed.
