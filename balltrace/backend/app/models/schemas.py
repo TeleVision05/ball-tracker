@@ -40,6 +40,10 @@ class HealthResponse(BaseModel):
     ffmpeg_available: bool
 
 
+class LimitsResponse(BaseModel):
+    max_upload_mb: int
+
+
 class OllamaSettingsResponse(BaseModel):
     base_url: str
     model: str

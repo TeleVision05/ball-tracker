@@ -6,21 +6,22 @@ import asyncio
 import json
 import logging
 import mimetypes
-import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
+from app import config
 from app.config import (
     PROGRESS_POLL_INTERVAL_SECONDS,
     analysis_dir,
     analysis_export_dir,
     ensure_directories,
 )
+from app.friendly_errors import app_error, describe
 from app.models import database as db
 from app.models.schemas import (
     Analysis,
@@ -29,6 +30,7 @@ from app.models.schemas import (
     Detection,
     ExportVideoRequest,
     HealthResponse,
+    LimitsResponse,
     OllamaSettingsResponse,
     OllamaSettingsUpdate,
     StartAnalysisRequest,
@@ -41,6 +43,8 @@ from app.services.video import VideoError, get_video_metadata
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
@@ -98,7 +102,7 @@ def _row_to_summary(row: Dict[str, Any], detection_count: int) -> AnalysisSummar
 async def _get_analysis_or_404(analysis_id: str) -> Dict[str, Any]:
     row = await db.get_analysis(analysis_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Analysis not found")
+        raise app_error("analysis_not_found")
     return row
 
 
@@ -119,6 +123,11 @@ async def health() -> HealthResponse:
         ollama_model=settings["model"],
         ffmpeg_available=export_service.ffmpeg_available(),
     )
+
+
+@router.get("/limits", response_model=LimitsResponse)
+async def limits() -> LimitsResponse:
+    return LimitsResponse(max_upload_mb=config.MAX_UPLOAD_MB)
 
 
 @router.get("/settings/ollama", response_model=OllamaSettingsResponse)
@@ -168,6 +177,22 @@ async def create_analysis(payload: CreateAnalysisRequest) -> Analysis:
     return _row_to_analysis(row)
 
 
+def _save_upload_within_limit(file: UploadFile, dest_path: Path) -> None:
+    """Copy the upload to disk, refusing (and removing) anything over the size limit."""
+    limit = config.max_upload_bytes()
+    written = 0
+    try:
+        with dest_path.open("wb") as out_file:
+            while chunk := file.file.read(_UPLOAD_CHUNK_BYTES):
+                written += len(chunk)
+                if written > limit:
+                    raise app_error("upload_too_large", limit_mb=config.MAX_UPLOAD_MB)
+                out_file.write(chunk)
+    except BaseException:
+        dest_path.unlink(missing_ok=True)
+        raise
+
+
 @router.post("/analyses/{analysis_id}/upload", response_model=Analysis)
 async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
     await _get_analysis_or_404(analysis_id)
@@ -178,13 +203,14 @@ async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
     suffix = Path(file.filename or "video.mp4").suffix or ".mp4"
     dest_path = target_dir / f"source{suffix}"
 
-    with dest_path.open("wb") as out_file:
-        shutil.copyfileobj(file.file, out_file)
+    _save_upload_within_limit(file, dest_path)
 
     try:
         meta = get_video_metadata(dest_path)
     except VideoError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid video file: {exc}") from exc
+        raise describe(
+            exc, f"reading the uploaded video for analysis_id={analysis_id}"
+        ).to_app_error() from exc
 
     await db.update_analysis(
         analysis_id,
@@ -205,7 +231,7 @@ async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
 async def start_analysis(analysis_id: str, payload: StartAnalysisRequest = StartAnalysisRequest()):
     row = await _get_analysis_or_404(analysis_id)
     if not row["video_path"]:
-        raise HTTPException(status_code=400, detail="Analysis has no uploaded video")
+        raise app_error("no_video")
 
     settings = await db.get_settings()
     model = payload.model or settings["model"]
@@ -322,10 +348,10 @@ async def stream_progress(analysis_id: str):
 async def get_video(analysis_id: str):
     row = await _get_analysis_or_404(analysis_id)
     if not row["video_path"]:
-        raise HTTPException(status_code=404, detail="No video uploaded for this analysis")
+        raise app_error("video_missing")
     path = Path(row["video_path"])
     if not path.exists():
-        raise HTTPException(status_code=404, detail="Video file missing on disk")
+        raise app_error("video_missing")
     media_type = mimetypes.guess_type(str(path))[0] or "video/mp4"
     return FileResponse(path, media_type=media_type, filename=path.name)
 
@@ -364,7 +390,7 @@ async def export_csv(analysis_id: str):
 async def export_video(analysis_id: str, payload: ExportVideoRequest = ExportVideoRequest()):
     row = await _get_analysis_or_404(analysis_id)
     if not row["video_path"]:
-        raise HTTPException(status_code=400, detail="Analysis has no uploaded video")
+        raise app_error("no_video")
 
     detections = await db.get_detections(analysis_id)
     output_dir = analysis_export_dir(analysis_id)
@@ -386,10 +412,10 @@ async def export_video(analysis_id: str, payload: ExportVideoRequest = ExportVid
             max_gap_frames=max_gap_frames,
             show_markers=show_markers,
         )
-    except export_service.FFmpegNotAvailableError as exc:
-        raise HTTPException(status_code=500, detail=f"ffmpeg error: {exc}") from exc
-    except VideoError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (export_service.FFmpegNotAvailableError, VideoError) as exc:
+        raise describe(
+            exc, f"exporting the video for analysis_id={analysis_id}"
+        ).to_app_error() from exc
 
     return {
         "job_id": str(uuid.uuid4()),
@@ -403,5 +429,5 @@ async def download_exported_video(analysis_id: str):
     await _get_analysis_or_404(analysis_id)
     path = analysis_export_dir(analysis_id) / "trajectory.mp4"
     if not path.exists():
-        raise HTTPException(status_code=404, detail="No exported video found. Run export first.")
+        raise app_error("export_missing")
     return FileResponse(path, media_type="video/mp4", filename=f"{analysis_id}_trajectory.mp4")
