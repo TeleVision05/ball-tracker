@@ -77,6 +77,7 @@ The video is the `videoFile` named in the sidecar. Open `android/` in Android St
 
 - **Works end to end on synthetic clips.** `balltracker demo` and the test suite run calibration, tracking, the fit and the metrics on rendered deliveries, and CI runs the tests, lint and builds on every pull request and push to `main`.
 - **Accuracy is synthetic only.** Over 500 simulated deliveries with phone-like detection noise, the median error is 7.9 km/h for release speed, 2 cm for line and 94 cm for length ([docs/ACCURACY.md](docs/ACCURACY.md)). No real delivery has been checked against radar or a marked bounce yet; that is milestone M2 in [ROADMAP.md](ROADMAP.md).
+- **Not yet working on real footage.** No phone capture from the Android app has been analysed yet. On the only real clips available (two 24 fps stock clips of net practice), 26 runs gave no believable speed or bounce ([docs/REAL_FOOTAGE.md](docs/REAL_FOOTAGE.md), 2026-11-13). Every result now carries plain-language checks: read the `Check this result:` lines (or the app's warnings) before the numbers.
 - **Known gaps.** Swing is not estimated (it always reads 0°). The tracker's outlier filter drops the frames around the bounce, which is the largest single source of speed and length error in the benchmark.
 - **BallTrace** (a separate, local-first experiment that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md) with its own README. It needs Node.js 18+, [Ollama](https://ollama.com) with `qwen3-vl:8b`, and optionally FFmpeg.
 
