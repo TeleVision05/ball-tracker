@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,27 +7,30 @@ name = "balltracker"
 version = "0.1.0"
 description = "Cricket bowling analytics: capture protocol, pitch geometry, synthetic validation data"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
-    "numpy>=1.24",
-    "opencv-python>=4.8",
-    "scipy>=1.11",
-    "pyyaml>=6.0",
-    "matplotlib>=3.7",
-    "pandas>=2.0",
-    "streamlit>=1.28",
-    "streamlit-image-coordinates>=0.1.6",
-    "Pillow>=10.0",
-    "mediapipe>=0.10",
+    "numpy>=1.26,<3",
+    "opencv-python>=4.10,<6",
+    "scipy>=1.12,<2",
+    "pyyaml>=6.0.1,<7",
+    "matplotlib>=3.8,<4",
+    "pandas>=2.2,<4",
+    "streamlit>=1.40,<2",
+    "streamlit-image-coordinates>=0.1.6,<1",
+    "Pillow>=10.1,<14",
+    "mediapipe>=0.10.14,<2",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4",
-    "ruff>=0.1",
+    "pytest>=7.4,<10",
+    "ruff>=0.17.5,<0.18",
+    "pre-commit>=3.5,<5",
 ]
 detection = [
-    "ultralytics>=8.0",
+    "ultralytics>=8.0,<9",
 ]
 
 [project.scripts]
@@ -40,7 +43,12 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pinned to the long-standing default rule set so the result does not change
+# when ruff changes its defaults (ruff 0.17 widened them to ~200 new findings).
+select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 # scripts bootstrap sys.path to src/ before importing balltracker

@@ -1,11 +1,13 @@
-fastapi
-uvicorn[standard]
-python-multipart
-httpx
-opencv-python
-numpy
-pydantic
-aiosqlite
-Pillow
-pytest
-pytest-asyncio
+# BallTrace backend (a separate experiment, see ../README.md).
+# numpy, opencv-python and Pillow share their bounds with ../../pyproject.toml;
+# tests/test_dependency_manifests.py fails if they drift apart.
+fastapi>=0.110,<1
+uvicorn[standard]>=0.27,<1
+python-multipart>=0.0.9,<1
+httpx>=0.27,<1
+opencv-python>=4.10,<6
+numpy>=1.26,<3
+pydantic>=2.5,<3
+aiosqlite>=0.19,<1
+Pillow>=10.1,<14
+pytest>=7.4,<10
