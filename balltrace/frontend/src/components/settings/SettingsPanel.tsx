@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, Save, Terminal } from 'lucide-react'
-import { api, ApiError } from '../../api/client'
+import { api } from '../../api/client'
+import { friendlyError } from '../../lib/friendlyError'
 import type { OllamaSettings } from '../../types'
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -33,7 +34,7 @@ export function SettingsPanel() {
       setFrameStride(data.frame_stride ?? 3)
       setLoadState('ready')
     } catch (err) {
-      setLoadError(err instanceof ApiError ? err.message : 'Failed to load settings.')
+      setLoadError(friendlyError(err, 'load settings'))
       setLoadState('error')
     }
   }
@@ -58,7 +59,7 @@ export function SettingsPanel() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Failed to save settings.')
+      setSaveError(friendlyError(err, 'save settings'))
     } finally {
       setSaving(false)
     }
@@ -97,7 +98,7 @@ export function SettingsPanel() {
               <AlertTriangle size={18} className="mt-0.5 shrink-0" />
               <div>
                 <p className="font-medium">
-                  Ollama is not reachable at {settings.base_url}.
+                  {settings.error ?? `Ollama is not ready at ${settings.base_url}.`}
                 </p>
                 <p className="mt-1 text-amber-200/80">
                   Install Ollama, pull <code className="font-mono">{settings.model}</code>, and
@@ -107,9 +108,6 @@ export function SettingsPanel() {
                   <Terminal size={13} className="shrink-0 text-white/40" />
                   ollama pull {settings.model} &amp;&amp; ollama serve
                 </div>
-                {settings.error && (
-                  <p className="mt-2 text-xs text-amber-200/60">Detail: {settings.error}</p>
-                )}
               </div>
             </div>
           )}

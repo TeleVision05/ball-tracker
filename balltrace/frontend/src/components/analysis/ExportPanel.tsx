@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FileJson, FileSpreadsheet, Film, Loader2, Download } from 'lucide-react'
-import { api, ApiError } from '../../api/client'
+import { api } from '../../api/client'
+import { friendlyError } from '../../lib/friendlyError'
 import type { TrajectorySettings } from '../../types'
 
 interface ExportPanelProps {
@@ -36,7 +37,7 @@ export function ExportPanel({ analysisId, trajectorySettings }: ExportPanelProps
       setVideoState('idle')
     } catch (err) {
       setVideoState('error')
-      setVideoError(err instanceof ApiError ? err.message : 'Video export failed.')
+      setVideoError(friendlyError(err, 'export video'))
     }
   }
 

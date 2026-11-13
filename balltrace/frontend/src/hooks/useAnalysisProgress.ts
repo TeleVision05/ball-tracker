@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
+import { friendlyError } from '../lib/friendlyError'
 import type { ProgressEvent } from '../types'
 
 interface UseAnalysisProgressResult {
@@ -45,14 +46,19 @@ export function useAnalysisProgress(
           source.close()
           setConnected(false)
         }
-      } catch {
-        setStreamError('Received malformed progress event from server.')
+      } catch (err) {
+        friendlyError(err, 'progress stream')
+        setStreamError(
+          "BallTrace sent an update this page couldn't read. Reload the page to see the latest status.",
+        )
       }
     }
 
     source.onerror = () => {
       setConnected(false)
-      setStreamError('Lost connection to progress stream.')
+      setStreamError(
+        'Live progress is interrupted, but the analysis keeps running. Reload the page to reconnect.',
+      )
     }
 
     return () => {
