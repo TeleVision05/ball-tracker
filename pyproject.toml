@@ -11,8 +11,10 @@ requires-python = ">=3.11,<3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-    "numpy>=1.26,<3",
-    "opencv-python>=4.10,<6",
+    # >=2.0: streamlit's pyarrow refuses to load on NumPy 1.x, which breaks the
+    # stump-click component (seen with --resolution lowest-direct, 2026-11-13).
+    "numpy>=2.0,<3",
+    "opencv-python>=4.10.0.84,<6",
     "scipy>=1.12,<2",
     "pyyaml>=6.0.1,<7",
     "matplotlib>=3.8,<4",

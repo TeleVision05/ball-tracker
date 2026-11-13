@@ -54,7 +54,11 @@ Film from about 4 m behind the bowler's stumps at 120 fps or more, with both set
 streamlit run scripts/run_session_app.py
 ```
 
-**Calibrate** tab: load a frame, click the stump landmarks in order, save. **Analyze** tab: run the analysis and see the pitch map and overlay.
+Add a video from the sidebar, then work through the three steps the app shows:
+
+1. **Set up camera**: load a picture from the clip, click the stump tips and bases in the order the app asks for, and save.
+2. **Analyze a ball**: set where the clip starts and ends, then run the automatic analysis or mark the ball by hand on at least 5 frames.
+3. **See result**: speed, where it bounced, the pitch map and a video replay with the fitted flight.
 
 **Command line.** The same two steps:
 
@@ -79,7 +83,7 @@ The video is the `videoFile` named in the sidecar. Open `android/` in Android St
 - **Accuracy is synthetic only.** Over 500 simulated deliveries with phone-like detection noise, the median error is 7.9 km/h for release speed, 2 cm for line and 94 cm for length ([docs/ACCURACY.md](docs/ACCURACY.md)). No real delivery has been checked against radar or a marked bounce yet; that is milestone M2 in [ROADMAP.md](ROADMAP.md).
 - **Not yet working on real footage.** No phone capture from the Android app has been analysed yet. On the only real clips available (two 24 fps stock clips of net practice), 26 runs gave no believable speed or bounce ([docs/REAL_FOOTAGE.md](docs/REAL_FOOTAGE.md), 2026-11-13). Every result now carries plain-language checks: read the `Check this result:` lines (or the app's warnings) before the numbers.
 - **Known gaps.** Swing is not estimated (it always reads 0°). The tracker's outlier filter drops the frames around the bounce, which is the largest single source of speed and length error in the benchmark.
-- **BallTrace** (a separate, local-first experiment that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md) with its own README. It needs Node.js 18+, [Ollama](https://ollama.com) with `qwen3-vl:8b`, and optionally FFmpeg.
+- **BallTrace** (a separate, local-first experiment that detects the ball with an Ollama vision model) lives in [`balltrace/`](balltrace/README.md) with its own README. It needs Node.js 22.22.2+ or 24.15+ (or 26+), [Ollama](https://ollama.com) with `qwen3-vl:8b`, and optionally FFmpeg.
 
 ## Configure
 
@@ -88,12 +92,13 @@ There is no `.env` file. The only environment variables are the optional BallTra
 - Pitch geometry, camera, detection and physics parameters: [`config/default.yaml`](config/default.yaml)
 - BallTrace backend constants (Ollama URL, model, frame stride, timeouts): [`balltrace/backend/app/config.py`](balltrace/backend/app/config.py); Ollama URL and model can also be changed in the UI Settings panel and are stored in SQLite.
 
-`pip install -e ".[dev]"` (an editable install with the `dev` extra) is the only install path. `requirements.txt` points at it, and `pyproject.toml` holds every dependency and version bound. To run the commit checks locally, install the hooks once with `pre-commit install`. They run ruff (check and format) on all Python and oxlint on `balltrace/frontend`; `pre-commit run --all-files` runs them on everything. The frontend hook needs `npm ci` in `balltrace/frontend` first.
+`pip install -e ".[dev]"` (an editable install with the `dev` extra) is the only install path for the analytics package. `requirements.txt` points at it, and `pyproject.toml` holds every dependency and version bound. To run the commit checks locally, install the hooks once with `pre-commit install`. They run ruff (check and format) on all Python and oxlint on `balltrace/frontend`; `pre-commit run --all-files` runs them on everything. The frontend hook needs `npm ci` in `balltrace/frontend` first.
 
 ## Test
 
 ```bash
 pytest tests/ -q                                 # analytics package, demo and benchmark
+pip install -r balltrace/backend/requirements.txt  # once, for the backend tests
 cd balltrace/backend && pytest -q                # BallTrace backend
 cd balltrace/frontend && npm run lint && npm test && npm run build
 ruff check . && ruff format --check .

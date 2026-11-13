@@ -96,6 +96,31 @@ def test_degenerate_stump_clicks_raise_a_typed_error_not_an_opencv_one(layout: s
         calibrate_from_points(points, image_size=(1280, 720), fov_deg=55.0)
 
 
+@pytest.mark.parametrize("layout", ["one_spot", "straight_line", "slanted_line"])
+def test_degenerate_stump_clicks_are_refused_before_opencv_sees_them(
+    layout: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Some OpenCV builds raise on these clicks, others return a meaningless
+    pose that then fails the RMSE check as a different error type. The guard
+    must decide before OpenCV runs, so every build gives the same answer."""
+    import balltracker.calibration as calibration
+
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("degenerate clicks reached OpenCV")
+
+    monkeypatch.setattr(calibration.cv2, "solvePnP", _fail)
+    monkeypatch.setattr(calibration.cv2, "solvePnPRansac", _fail)
+    names = LANDMARK_ORDER[:6]
+    if layout == "one_spot":
+        points = {name: np.array([100.0, 100.0]) for name in names}
+    elif layout == "straight_line":
+        points = {name: np.array([100.0 + 50 * i, 300.0]) for i, name in enumerate(names)}
+    else:
+        points = {name: np.array([100.0 + 40 * i, 80.0 + 30 * i]) for i, name in enumerate(names)}
+    with pytest.raises(CalibrationFailedError):
+        calibrate_from_points(points, image_size=(1280, 720), fov_deg=55.0)
+
+
 def test_scattered_stump_clicks_are_rejected_as_input_error() -> None:
     points = {
         name: np.array([(i * 377) % 1200 + 0.0, (i * 911) % 700 + 0.0])

@@ -59,18 +59,20 @@ to be present.
 
 ## Notes on the detection pipeline
 
-1. The video is split into overlapping sliding windows (default size 8,
-   overlap 4).
-2. Each window's frames are JPEG-encoded and sent as a single `/api/chat`
-   request to Ollama with the centralized prompt in
-   `app/prompts/ball_detection.py`.
+1. By default (`ANALYZE_FRAMES_INDIVIDUALLY = True` in `app/config.py`) every
+   3rd frame (`DEFAULT_FRAME_STRIDE`) is sent to Ollama on its own, one
+   `/api/chat` request per frame. Only when `ANALYZE_FRAMES_INDIVIDUALLY` is
+   off is the video split into sliding windows instead (`DEFAULT_WINDOW_SIZE`
+   4, `DEFAULT_WINDOW_OVERLAP` 0), each sent as one contact-sheet request.
+2. Frames are downscaled and JPEG-encoded before sending, with the
+   centralized prompt in `app/prompts/ball_detection.py`.
 3. The model's JSON response is parsed with a tolerant extractor that
    strips markdown fences and can recover from truncated output; if
    parsing/validation still fails, one retry is made with a correction
-   prompt. If that also fails, the window is skipped and the pipeline
-   continues.
-4. Detections from overlapping windows are merged per frame (preferring
-   visible detections, then higher confidence), normalized coordinates and
-   timestamps are computed, and results are persisted to SQLite.
-5. Progress (including a cancel flag checked between windows) is exposed
+   prompt. If that also fails, the frame or window is skipped and the
+   pipeline continues.
+4. Detections are merged per frame (preferring visible detections, then
+   higher confidence), normalized coordinates and timestamps are computed,
+   and results are persisted to SQLite.
+5. Progress (including a cancel flag checked between frames or windows) is exposed
    via `GET /api/analyses/{id}/progress` as Server-Sent Events.

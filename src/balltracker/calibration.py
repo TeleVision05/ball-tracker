@@ -89,6 +89,27 @@ def is_calibration_acceptable(rmse_px: float, max_rmse: float = 5.0) -> bool:
     return rmse_px <= max_rmse
 
 
+MIN_CLICK_SPREAD_PX = 1.0
+
+
+def _reject_degenerate_clicks(pts_2d: np.ndarray) -> None:
+    """Refuse clicks that sit on one spot or one straight line.
+
+    No camera pose fits such clicks. Left to OpenCV, the outcome depends on
+    the build: some versions raise, others return a meaningless pose. Checking
+    the spread across the clicks' narrower axis gives the same typed error on
+    every version.
+    """
+    centered = pts_2d - pts_2d.mean(axis=0)
+    singular_values = np.linalg.svd(centered, compute_uv=False)
+    minor_spread_px = float(singular_values[-1]) / np.sqrt(len(pts_2d))
+    if minor_spread_px < MIN_CLICK_SPREAD_PX:
+        raise CalibrationFailedError(
+            f"Landmark clicks are coincident or collinear (minor-axis spread "
+            f"{minor_spread_px:.3f} px); no camera pose fits them"
+        )
+
+
 def _solve_pose(
     pts_3d: np.ndarray, pts_2d: np.ndarray, K: np.ndarray, dist: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -129,6 +150,7 @@ def solve_pnp(
 
     pts_2d = np.array([image_points[k][:2] for k in keys], dtype=np.float64)
     pts_3d = np.array([landmarks_3d[k] for k in keys], dtype=np.float64)
+    _reject_degenerate_clicks(pts_2d)
 
     if image_size is None:
         cfg = load_config()

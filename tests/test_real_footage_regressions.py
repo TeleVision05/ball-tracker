@@ -24,7 +24,7 @@ from balltracker.result_checks import AT_FIT_LIMIT, POOR_FIT, result_checks
 from balltracker.scenario import protocol_camera
 from balltracker.synthetic import default_camera
 from balltracker.tracking import track_from_clicks
-from tests.test_capture_analysis import _write_synthetic_capture
+from synthetic_captures import write_synthetic_capture
 
 
 def _textured_frames(n: int, width: int = 64, height: int = 48) -> list[np.ndarray]:
@@ -200,7 +200,7 @@ def test_capture_with_a_slow_clock_is_flagged(tmp_path: Path) -> None:
     to 24 fps (what a slow-motion export does) makes every speed five times too
     slow, and the result must say so instead of reporting ~25 km/h quietly.
     """
-    sidecar_path, _gt = _write_synthetic_capture(tmp_path / "clip")
+    sidecar_path, _gt = write_synthetic_capture(tmp_path / "clip")
     clean = analyze_capture(sidecar_path, detection_method="hsv")
     assert clean["checks"] == []
 

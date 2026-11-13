@@ -4,21 +4,23 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
-from tests.test_capture_analysis import _write_synthetic_capture
+from synthetic_captures import write_synthetic_capture
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON = ROOT / ".venv" / "bin" / "python"
+# The interpreter running the tests, wherever it lives (CI has no repo-local .venv).
+PYTHON = sys.executable
 SCRIPT = ROOT / "scripts" / "analyze_capture.py"
 
 
 def test_analyze_capture_cli_writes_report(tmp_path: Path) -> None:
-    sidecar_path, _gt = _write_synthetic_capture(tmp_path / "clip")
+    sidecar_path, _gt = write_synthetic_capture(tmp_path / "clip")
     out_path = tmp_path / "analysis.json"
     completed = subprocess.run(
         [
-            str(PYTHON),
+            PYTHON,
             str(SCRIPT),
             "--sidecar",
             str(sidecar_path),
@@ -41,7 +43,7 @@ def test_analyze_capture_cli_writes_report(tmp_path: Path) -> None:
 def test_analyze_capture_cli_missing_sidecar(tmp_path: Path) -> None:
     completed = subprocess.run(
         [
-            str(PYTHON),
+            PYTHON,
             str(SCRIPT),
             "--sidecar",
             str(tmp_path / "missing.json"),

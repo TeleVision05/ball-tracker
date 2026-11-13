@@ -18,7 +18,7 @@ Ball detection is performed exclusively by the Ollama vision model — not YOLO,
 
 ## Prerequisites
 
-1. **Python 3.11 or 3.12** and Node.js 18+
+1. **Python 3.11 or 3.12** and Node.js 22.22.2+ or 24.15+ (or 26+; the frontend test runner, jsdom, needs these)
 2. **[Ollama](https://ollama.com)** running locally with a vision model:
 
    ```bash
