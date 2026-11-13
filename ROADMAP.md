@@ -15,21 +15,20 @@ How to check that it works. The CI badge in the README shows the latest result, 
 | Check | Command | What it covers |
 |---|---|---|
 | Analytics package | `.venv/bin/python -m pytest tests/ -q` | Synthetic-video end to end, PnP recovery, physics round trip, metrics keys, plain language, hybrid tracker with a mock release seed |
-| BallTrace backend | `cd balltrace/backend && pytest -q` | JSON parse/repair, window merge, trajectory gaps, normalized coords, timestamps, contact sheet, API contract defaults. Needs no Ollama, ffmpeg or video |
-| BallTrace frontend | `cd balltrace/frontend && npm run build` | Type check and production build |
+| BallTrace backend | `cd balltrace/backend && pytest -q` | JSON parse/repair, window merge, trajectory gaps, normalized coords, timestamps, contact sheet, API contract defaults, Ollama client and `run_analysis` against a fake Ollama (success, model missing, server down, malformed reply, timeout, cancel), friendly API errors, upload limit. Needs no Ollama, ffmpeg or video |
+| BallTrace frontend | `cd balltrace/frontend && npm test && npm run build` | Friendly-error helper, status and trajectory helpers, upload flow, results and error rendering, player and progress hooks; type check and production build |
 | Lint | `.venv/bin/ruff check .` / `npm run lint` | Python lint and format, frontend lint (also run by the pre-commit hooks) |
 
 Not verified by any automated check:
 
-- Any path that talks to a real Ollama server: `OllamaClient` in `balltrace/backend/app/services/ollama_client.py` and `run_analysis` in `balltrace/backend/app/services/analysis_pipeline.py`.
+- Behaviour against a real Ollama server and a real vision model. The client and pipeline are tested only against a fake server (`httpx.MockTransport`); the real model's answers, speed and timeouts are not covered.
 - MediaPipe pose release seeding on real footage (`src/balltracker/release.py`); the only test asserts `mediapipe_available()` returns a bool.
-- The Streamlit session app on real clips; `scripts/run_session_app.py` has no test.
+- The Streamlit session app on real clips; `scripts/run_session_app.py` has no test. Only the failure messages it shows are tested (`tests/test_user_messages.py`).
 - Accuracy against radar or measured bounce markers. Every accuracy test runs on synthetic deliveries from `src/balltracker/synthetic.py`.
 
 ## Known gaps and bugs
 
 - Oversized files: `scripts/run_session_app.py` (830 lines), `src/balltracker/tracking.py` (598). `track_delivery_hybrid` (`tracking.py:225` to `:432`) is one ~200-line function.
-- Frontend has no test runner (`balltrace/frontend/package.json` has no test script); `src/lib/trajectory.ts`, `src/lib/status.ts` and the hooks are untested.
 - `data/ground_truth/template.csv` is a header line only; no labelled real delivery exists in the repo, so `evaluate_against_gt` in `src/balltracker/pipeline.py` only ever runs on synthetic data.
 - `useVideoPlayer` attached listeners via `[videoRef.current]` in the effect deps (fixed this commit with a callback ref; the linter's suggested `[]` would have missed the `<video>` element that mounts only after upload).
 
@@ -39,7 +38,7 @@ Not verified by any automated check:
 
 - [x] Add `.pre-commit-config.yaml` running `ruff` (root and `balltrace/backend`) and `oxlint` (`balltrace/frontend`); document `pre-commit install` in README.
 - [x] Bound `balltrace/backend/requirements.txt`; reconcile `requirements.txt` with `pyproject.toml` (`ultralytics` stays only in the optional `detection` extra).
-- [x] Add a GitHub Actions workflow that runs root pytest, backend pytest, and frontend lint + build.
+- [x] Add a GitHub Actions workflow that runs root pytest, backend pytest, and frontend lint + test + build.
 
 Done when: the workflow is green on `main` for all three jobs, and a local commit containing a ruff violation is rejected by the hook.
 
@@ -60,8 +59,8 @@ Done when: `wc -l` shows no source file over 500 lines, and the root and backend
 
 ### M4. Test the Ollama path and the frontend
 
-- [ ] Add a fake Ollama fixture (`httpx.MockTransport`) and test `run_analysis` end to end: per-frame mode, window mode, parse-failure retry, cancel.
-- [ ] Add vitest with tests for `lib/trajectory.ts` and `lib/status.ts`; add `npm test`.
+- [x] Add a fake Ollama fixture (`httpx.MockTransport`) and test `run_analysis` end to end: per-frame mode, window mode, parse-failure retry, cancel (`balltrace/backend/tests/test_analysis_pipeline.py`, `test_ollama_client.py`).
+- [x] Add vitest with tests for `lib/trajectory.ts` and `lib/status.ts`; add `npm test` (and the friendly-error helper, upload flow, results rendering and hooks).
 
 Done when: a coverage run shows `analysis_pipeline.run_analysis` executed by tests, and `npm test` runs in the M1 workflow.
 

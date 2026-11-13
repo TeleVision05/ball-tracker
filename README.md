@@ -82,7 +82,7 @@ The video is the `videoFile` named in the sidecar. Open `android/` in Android St
 
 ## Configure
 
-There are no environment variables and no `.env` file.
+There is no `.env` file. The only environment variables are the optional BallTrace backend ones (`BALLTRACE_HOST`, `BALLTRACE_PORT`, `BALLTRACE_MAX_UPLOAD_MB`), documented in [`balltrace/README.md`](balltrace/README.md).
 
 - Pitch geometry, camera, detection and physics parameters: [`config/default.yaml`](config/default.yaml)
 - BallTrace backend constants (Ollama URL, model, frame stride, timeouts): [`balltrace/backend/app/config.py`](balltrace/backend/app/config.py); Ollama URL and model can also be changed in the UI Settings panel and are stored in SQLite.
@@ -94,7 +94,7 @@ There are no environment variables and no `.env` file.
 ```bash
 pytest tests/ -q                                 # analytics package, demo and benchmark
 cd balltrace/backend && pytest -q                # BallTrace backend
-cd balltrace/frontend && npm run lint && npm run build
+cd balltrace/frontend && npm run lint && npm test && npm run build
 ruff check . && ruff format --check .
 ```
 

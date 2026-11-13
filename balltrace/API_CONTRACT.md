@@ -15,6 +15,12 @@ Base URL: `http://localhost:8000`
 }
 ```
 
+### GET /api/limits
+```json
+{ "max_upload_mb": 500 }
+```
+The largest video `POST /api/analyses/{id}/upload` accepts. Set with `BALLTRACE_MAX_UPLOAD_MB`.
+
 ### GET /api/settings/ollama
 ```json
 {
@@ -60,6 +66,7 @@ Returns: `Analysis` (status=`created`)
 ### POST /api/analyses/{id}/upload
 multipart/form-data: `file` (video)
 Returns: `Analysis` with video metadata (status=`uploaded`)
+Errors: `413 upload_too_large` when the file is over the limit, `400 video_unreadable` when it is not a readable video.
 
 ### POST /api/analyses/{id}/start
 Body (optional): `{ "model"?: string, "window_size"?: number, "window_overlap"?: number, "frame_stride"?: number }`
@@ -152,6 +159,31 @@ Streams burned-in MP4.
 
 ### AnalysisSummary
 Same as Analysis but without `detections` array; includes `detection_count`.
+
+## Errors
+
+Every error response, whatever the status, has this shape:
+
+```json
+{ "detail": "That video is larger than the 500 MB limit. Trim or compress it, then upload it again.", "code": "upload_too_large" }
+```
+
+`detail` is plain language for the person who clicked the button: what happened and what to do next. It never contains exception text, status codes or validation-library output (those go to the backend log). `code` is for programs.
+
+| `code` | Status | When |
+|---|---|---|
+| `upload_too_large` | 413 | Upload over `max_upload_mb` |
+| `video_unreadable` | 400 | The upload is not a video OpenCV can read |
+| `no_video` | 400 | Start or export on an analysis with no video |
+| `analysis_not_found` | 404 | Unknown analysis id |
+| `video_missing` | 404 | No video, or the file was removed from disk |
+| `export_missing` | 404 | Download before an export exists |
+| `ffmpeg_unavailable` | 503 | Video export needs FFmpeg and it is missing or failed |
+| `invalid_request` | 422 | Request body failed validation |
+| `not_found` | 404 | Unknown route |
+| `internal_error` | 500 | Anything unexpected |
+
+Ollama problems (not running, model not installed, timeout, unreadable answer) do not fail a request: they stop the analysis. It ends with `status` `failed` and `error` set to the plain-language message, and the same text is in the progress stream's `message`. The Ollama fields of `GET /api/settings/ollama` (`available`, `error`) use the same wording.
 
 ## CORS
 Allow `http://localhost:5173` and `http://127.0.0.1:5173`.

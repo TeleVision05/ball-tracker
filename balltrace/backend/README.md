@@ -26,10 +26,11 @@ pip install -r balltrace/backend/requirements.txt
 ## Run the API
 
 ```bash
-uvicorn app.main:app --reload --app-dir balltrace/backend --port 8000
+cd balltrace/backend
+python -m app
 ```
 
-The API is served at `http://localhost:8000`, with all routes under
+The API is served at `http://127.0.0.1:8000` (this computer only; there is no login, see the "Security model" in [`../README.md`](../README.md)). Host, port and the upload size limit come from `BALLTRACE_HOST`, `BALLTRACE_PORT` and `BALLTRACE_MAX_UPLOAD_MB`. All routes are under
 `/api` (see `balltrace/API_CONTRACT.md`). CORS is open for
 `http://localhost:5173` and `http://127.0.0.1:5173` (the frontend dev
 server).
@@ -50,9 +51,11 @@ pytest tests/ -v
 ```
 
 Tests cover JSON parsing/repair of model output, overlapping-window merge
-and dedupe, trajectory gap handling, normalized coordinate math, and
-frame/timestamp conversions. They do not require Ollama, ffmpeg, or a real
-video file to be present.
+and dedupe, trajectory gap handling, normalized coordinate math,
+frame/timestamp conversions, the Ollama client and the analysis pipeline
+against a fake Ollama (`httpx.MockTransport`), and the HTTP error and upload
+limit behaviour. They do not require Ollama, ffmpeg, or a real video file
+to be present.
 
 ## Notes on the detection pipeline
 
