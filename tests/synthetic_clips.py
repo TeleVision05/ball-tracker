@@ -17,7 +17,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from balltracker.synthetic import generate_delivery
+from balltracker.pitch import BALL_RADIUS_M
+from balltracker.synthetic import (
+    _draw_stumps,
+    _random_delivery,
+    default_camera,
+    generate_delivery,
+    simulate_trajectory,
+)
 
 FPS = 120
 
@@ -42,6 +49,76 @@ def make_clip(out_dir: Path, seed: int) -> Clip:
         bounce_frame=int(ann["bounce_frame_index"]),
         frame_count=int(ann["frame_count"]),
     )
+
+
+class FrameCapture:
+    """In-memory stand-in for ``cv2.VideoCapture`` that renders a seeded delivery.
+
+    No codec is involved, so a tracker run on it gives the same numbers on any
+    machine with the same OpenCV image-processing code. Frames are rendered on
+    demand like ``render_delivery_video`` does (red ball, stumps). With
+    ``hard=True`` it adds a static texture, hides the ball on ``HIDDEN`` frames
+    and moves a white distractor across the top.
+    """
+
+    HIDDEN = (20, 21, 22)
+
+    def __init__(self, seed: int, hard: bool = False, fps: int = FPS) -> None:
+        params = _random_delivery(np.random.default_rng(seed))
+        times, positions, _bounce_idx, _bounce_pos = simulate_trajectory(params)
+        self.camera = default_camera(fps=fps)
+        self.fps = float(fps)
+        self.w, self.h = self.camera.resolution
+        self.n = int(times[-1] * fps) + 1
+        idx = np.searchsorted(times, np.arange(self.n) / fps, side="right") - 1
+        idx = np.clip(idx, 0, len(positions) - 1)
+        self.uv = self.camera.project(positions[idx])
+        focal = self.camera.intrinsic_matrix()[0, 0]
+        self.radius = [max(4, int(BALL_RADIUS_M * focal / max(p[1], 1.0))) for p in positions[idx]]
+        rng = np.random.default_rng(seed + 1)
+        self.texture = rng.integers(0, 40, size=(self.h, self.w, 3), dtype=np.uint8)
+        self.hard = hard
+        self.pos = 0
+
+    def isOpened(self) -> bool:  # noqa: N802 (cv2 API)
+        return True
+
+    def get(self, prop: int) -> float:
+        values = {
+            cv2.CAP_PROP_FRAME_COUNT: float(self.n),
+            cv2.CAP_PROP_FPS: self.fps,
+            cv2.CAP_PROP_FRAME_WIDTH: float(self.w),
+            cv2.CAP_PROP_FRAME_HEIGHT: float(self.h),
+        }
+        return values.get(prop, 0.0)
+
+    def set(self, prop: int, value: float) -> bool:
+        if prop == cv2.CAP_PROP_POS_FRAMES:
+            self.pos = int(value)
+        return True
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        if self.pos >= self.n:
+            return False, None
+        frame = self.render(self.pos)
+        self.pos += 1
+        return True, frame
+
+    def release(self) -> None:
+        pass
+
+    def render(self, k: int) -> np.ndarray:
+        frame = np.zeros((self.h, self.w, 3), dtype=np.uint8)
+        _draw_stumps(frame, self.camera)
+        u, v = self.uv[k]
+        if not np.any(np.isnan(self.uv[k])) and not (self.hard and k in self.HIDDEN):
+            centre = (int(np.clip(u, 0, self.w - 1)), int(np.clip(v, 0, self.h - 1)))
+            cv2.circle(frame, centre, self.radius[k], (0, 0, 255), -1)
+        if self.hard:
+            frame = cv2.add(frame, self.texture)
+            x = int(40 + 9 * k) % max(1, self.w - 60)
+            cv2.rectangle(frame, (x, 30), (x + 18, 48), (255, 255, 255), -1)
+        return frame
 
 
 def make_tiny_clip(out_dir: Path, n_frames: int = 3) -> Path:

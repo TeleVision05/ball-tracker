@@ -111,10 +111,12 @@ def test_frame_gaps_split_segments_and_predictions_are_dropped() -> None:
 
 
 def test_a_stationary_segment_loses_to_a_moving_one() -> None:
-    still = [(k, 100.0, 100.0 + 0.5 * k) for k in range(20)]
-    moving = [(k, 400.0 + 6.0 * k, 100.0) for k in range(26, 32)]
+    # By length x mean step the still run (100 x 0.5) would beat the moving
+    # one (6 x 6); it loses only because steps under 2 px score zero.
+    still = [(k, 100.0, 100.0 + 0.5 * k) for k in range(100)]
+    moving = [(k, 400.0 + 6.0 * k, 100.0) for k in range(106, 112)]
     result = filter_ballistic_segment(_points(still + moving))
-    assert [tp.frame_idx for tp in result] == list(range(26, 32))
+    assert [tp.frame_idx for tp in result] == list(range(106, 112))
 
 
 def test_a_residual_outlier_is_removed_by_the_quadratic_fit() -> None:
