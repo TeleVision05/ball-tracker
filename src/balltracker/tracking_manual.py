@@ -5,9 +5,7 @@ Import these through :mod:`balltracker.tracking`.
 
 from __future__ import annotations
 
-import numpy as np
-
-from .tracking_core import TrackPoint, _Kalman2D
+from .tracking_core import TrackPoint
 
 
 def predict_ball_uv(
@@ -74,49 +72,45 @@ def track_from_clicks(
 ) -> list[TrackPoint]:
     """Build a track from manual frame clicks, optionally filling gaps.
 
-    Clicked frames are measured (``predicted=False``). Between clicks, up to
-    ``max_gap`` frames are filled with Kalman predictions when ``fill_gaps``.
+    Clicked frames are measured (``predicted=False``). Between two clicks, up
+    to ``max_gap`` frames after the earlier click are filled when
+    ``fill_gaps``, on the straight line between the two clicks. Every gap here
+    has a click on both sides, so the fill never extrapolates. (A Kalman filter
+    used to do this; its velocity estimate lagged so badly on a real clip that
+    filled frames landed behind the last click.)
     """
     if not clicks:
         return []
 
     dt = 1.0 / max(fps, 1e-6)
     frames = sorted(int(f) for f in clicks)
-
-    if not fill_gaps:
-        return [_click_point(f, clicks[f], dt, radius_px) for f in frames]
-
-    kf = _Kalman2D(dt)
-    first = frames[0]
-    u0, v0 = clicks[first]
-    kf.update(np.array([u0, v0], dtype=np.float64))
-    track: list[TrackPoint] = [_click_point(first, (u0, v0), dt, radius_px)]
-
-    for nxt in frames[1:]:
-        prev = track[-1].frame_idx
-        gap = nxt - prev
-        if gap <= 0:
-            continue
-
-        # One predict per frame from prev → nxt, record near gaps only.
-        for step in range(1, gap + 1):
-            pred = kf.predict()
-            f = prev + step
-            if f == nxt:
-                u, v = clicks[nxt]
-                kf.update(np.array([u, v], dtype=np.float64))
-                track.append(_click_point(nxt, (u, v), dt, radius_px))
-            elif step <= max_gap:
+    track: list[TrackPoint] = [_click_point(frames[0], clicks[frames[0]], dt, radius_px)]
+    for prev, nxt in zip(frames, frames[1:]):
+        if fill_gaps:
+            for f in range(prev + 1, min(nxt, prev + max_gap + 1)):
                 track.append(
-                    TrackPoint(
-                        frame_idx=f,
-                        t_s=f * dt,
-                        u=float(pred[0]),
-                        v=float(pred[1]),
-                        radius_px=radius_px,
-                        confidence=0.35,
-                        predicted=True,
-                    )
+                    _filled_point(f, (prev, clicks[prev]), (nxt, clicks[nxt]), dt, radius_px)
                 )
-
+        track.append(_click_point(nxt, clicks[nxt], dt, radius_px))
     return track
+
+
+def _filled_point(
+    frame_idx: int,
+    before: tuple[int, tuple[float, float]],
+    after: tuple[int, tuple[float, float]],
+    dt: float,
+    radius_px: float,
+) -> TrackPoint:
+    """Linear interpolation between the clicks either side of ``frame_idx``."""
+    (f0, (u0, v0)), (f1, (u1, v1)) = before, after
+    w = (frame_idx - f0) / float(f1 - f0)
+    return TrackPoint(
+        frame_idx=frame_idx,
+        t_s=frame_idx * dt,
+        u=float(u0) + w * (float(u1) - float(u0)),
+        v=float(v0) + w * (float(v1) - float(v0)),
+        radius_px=radius_px,
+        confidence=0.35,
+        predicted=True,
+    )

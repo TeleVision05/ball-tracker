@@ -140,6 +140,7 @@ def add_delivery_analysis(
         "overlay_path": str(overlay_path) if overlay_path else None,
         "pitch_map_path": str(pitch_map_path),
         "metrics": metrics,
+        "checks": list(analysis_dict.get("checks", [])),
         "added_at": datetime.now(timezone.utc).isoformat(),
     }
     session.deliveries.append(record)

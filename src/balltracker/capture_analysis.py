@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 
+from .calibration import CameraCalibration
 from .capture_sidecar import (
     CaptureSidecar,
     apply_presentation_times,
@@ -20,6 +21,7 @@ from .config import load_config
 from .metrics import compute_metrics, metrics_to_dict
 from .physics import fit_trajectory
 from .plain_language import summarize_delivery
+from .result_checks import result_checks
 from .tracking import TrackPoint, track_video
 
 _NO_TIMESTAMPS = "No presentation timestamps; times use frame index divided by fps."
@@ -98,6 +100,22 @@ def analyze_capture(
     if len(track) < 5:
         raise NoBallFoundError(f"Insufficient track points ({len(track)}) in {video}")
 
+    return _capture_result(sidecar, video, track, calib, config, fps)
+
+
+def _capture_result(
+    sidecar: CaptureSidecar,
+    video: Path,
+    track: list[TrackPoint],
+    calib: CameraCalibration,
+    config: dict,
+    fps: float,
+) -> dict:
+    """Fit the track and build the capture result.
+
+    ``checks`` holds plain-language warnings when the result looks wrong;
+    ``warnings`` keeps the timing notes about the phone's clock.
+    """
     physics = config.get("physics", {})
     g = float(physics.get("gravity_m_s2", 9.81))
     use_drag = float(physics.get("drag_coefficient", 0.0)) > 0
@@ -139,6 +157,7 @@ def analyze_capture(
         "camera_center_m": [float(center[0]), float(center[1]), float(center[2])],
         "timing_source": _timing_source(sidecar, track),
         "warnings": _warnings(sidecar, track),
+        "checks": result_checks(metrics_dict, fps=fps),
     }
 
 
@@ -238,13 +257,34 @@ def _encoded_frame_size(video_path: Path) -> tuple[int, int]:
     return width, height
 
 
+# Lossless first: the ball is a few pixels wide, and a lossy mp4v copy of a
+# real clip shifted pixels by up to 4.7 grey levels on average and changed the
+# frames the tracker found the ball in (docs/REAL_FOOTAGE.md). FFV1 costs disk
+# (roughly 0.45 MB per 900x474 frame) but only for the life of the analysis.
+_UPRIGHT_CODECS: tuple[tuple[str, str], ...] = (("FFV1", ".mkv"), ("mp4v", ".mp4"))
+
+
+def _open_upright_writer(
+    fps: float, size: tuple[int, int]
+) -> tuple[cv2.VideoWriter, Path] | tuple[None, None]:
+    """Open a temporary writer, lossless when this OpenCV build allows it."""
+    for fourcc, suffix in _UPRIGHT_CODECS:
+        descriptor, name = tempfile.mkstemp(suffix=suffix)
+        os.close(descriptor)
+        path = Path(name)
+        writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*fourcc), fps, size)
+        if writer.isOpened():
+            return writer, path
+        writer.release()
+        path.unlink(missing_ok=True)
+    return None, None
+
+
 def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tuple[int, int]]:
     capture = _open_encoded_capture(video_path)
     source_fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
     writer_fps = source_fps if source_fps > 1.0 else 30.0
-    descriptor, name = tempfile.mkstemp(suffix=".mp4")
-    os.close(descriptor)
-    temp_path = Path(name)
+    temp_path: Path | None = None
     writer: cv2.VideoWriter | None = None
     try:
         ok, frame = capture.read()
@@ -252,14 +292,9 @@ def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tupl
             raise VideoOpenError(f"Cannot read frames from {video_path}")
         upright = cv2.rotate(frame, rotate_code)
         height, width = upright.shape[:2]
-        writer = cv2.VideoWriter(
-            str(temp_path),
-            cv2.VideoWriter_fourcc(*"mp4v"),
-            writer_fps,
-            (width, height),
-        )
-        if not writer.isOpened():
-            raise RuntimeError(f"Failed to open upright video writer: {temp_path}")
+        writer, temp_path = _open_upright_writer(writer_fps, (width, height))
+        if writer is None or temp_path is None:
+            raise RuntimeError("Failed to open an upright video writer")
         writer.write(upright)
         while True:
             ok, frame = capture.read()
@@ -271,7 +306,8 @@ def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tupl
         if writer is not None:
             writer.release()
             writer = None
-        temp_path.unlink(missing_ok=True)
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
         raise
     finally:
         capture.release()

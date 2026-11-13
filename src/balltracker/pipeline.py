@@ -18,8 +18,20 @@ from .errors import CalibrationMissingError, NoBallFoundError
 from .metrics import compute_metrics, metrics_to_dict
 from .physics import fit_trajectory
 from .pitch import stump_landmarks_3d
+from .result_checks import result_checks
 from .synthetic import CameraModel
 from .tracking import TrackPoint, track_video
+
+
+_TRACK_HINT = (
+    "The hybrid tracker (method='auto') seeds its search from a "
+    "MediaPipe-estimated release point and hand/arm motion — if the "
+    "bowler isn't clearly visible early in the window, that seed can "
+    "be missing or off. Try widening the trim (a few extra frames "
+    "before release and after the bounce), or fall back to detection "
+    "method 'white'/'hsv' if the ball's colour contrasts cleanly "
+    "with the background."
+)
 
 
 def _companion_json_path(video_path: Path) -> Path:
@@ -208,61 +220,9 @@ def analyze_delivery(
     if len(track) < 5:
         raise NoBallFoundError(
             f"Insufficient track points ({len(track)}) in {video_path} "
-            f"for frames [{start_frame}, {end_frame}]. "
-            "The hybrid tracker (method='auto') seeds its search from a "
-            "MediaPipe-estimated release point and hand/arm motion — if the "
-            "bowler isn't clearly visible early in the window, that seed can "
-            "be missing or off. Try widening the trim (a few extra frames "
-            "before release and after the bounce), or fall back to detection "
-            "method 'white'/'hsv' if the ball's colour contrasts cleanly "
-            "with the background."
+            f"for frames [{start_frame}, {end_frame}]. {_TRACK_HINT}"
         )
-
-    g = float(config.get("physics", {}).get("gravity_m_s2", 9.81))
-    use_drag = float(config.get("physics", {}).get("drag_coefficient", 0.0)) > 0
-
-    fit = fit_trajectory(track, calib, fps=fps_val, g=g, use_drag=use_drag)
-    metrics = compute_metrics(
-        fit,
-        restitution=float(config.get("physics", {}).get("restitution", 0.75)),
-        friction=float(config.get("physics", {}).get("friction_coefficient", 0.15)),
-    )
-
-    landmarks = stump_landmarks_3d()
-    stump_proj = {}
-    for key, pt in landmarks.items():
-        uv = calib.K @ (calib.R @ pt + calib.t)
-        if abs(uv[2]) > 1e-9:
-            stump_proj[key] = (uv[:2] / uv[2]).tolist()
-
-    return {
-        "video_path": str(video_path),
-        "metrics": metrics_to_dict(metrics),
-        "track": [
-            {
-                "frame_idx": tp.frame_idx,
-                "t_s": tp.t_s,
-                "u": tp.u,
-                "v": tp.v,
-                "radius_px": tp.radius_px,
-                "confidence": tp.confidence,
-                "predicted": tp.predicted,
-            }
-            for tp in track
-        ],
-        "fit": {
-            "reprojection_rmse_px": fit.reprojection_rmse,
-            "bounce_time_s": fit.bounce_time_s,
-            "bounce_position_m": fit.bounce_pos_m.tolist()
-            if fit.bounce_pos_m is not None
-            else None,
-            "release_position_m": fit.pre.x0.tolist(),
-            "release_velocity_m_s": fit.pre.v0.tolist(),
-        },
-        "frame_window": {"start_frame": start_frame, "end_frame": end_frame},
-        "calib_rmse_px": calib.rms_reprojection_error,
-        "stump_projections": stump_proj,
-    }
+    return _delivery_result(video_path, track, calib, config, fps_val, start_frame, end_frame)
 
 
 def analyze_from_track(
@@ -316,38 +276,40 @@ def analyze_from_track(
             "Mark the ball on at least 5 frames, then calculate."
         )
 
-    g = float(config.get("physics", {}).get("gravity_m_s2", 9.81))
-    use_drag = float(config.get("physics", {}).get("drag_coefficient", 0.0)) > 0
+    result = _delivery_result(video_path, track, calib, config, fps_val, start_frame, end_frame)
+    result["manual_track"] = True
+    return result
 
-    fit = fit_trajectory(track, calib, fps=fps_val, g=g, use_drag=use_drag)
-    metrics = compute_metrics(
-        fit,
-        restitution=float(config.get("physics", {}).get("restitution", 0.75)),
-        friction=float(config.get("physics", {}).get("friction_coefficient", 0.15)),
+
+def _delivery_result(
+    video_path: Path,
+    track: list[TrackPoint],
+    calib: CameraCalibration,
+    config: dict,
+    fps: float,
+    start_frame: int,
+    end_frame: int,
+) -> dict:
+    """Fit the track and build the result dict both entry points return.
+
+    ``checks`` holds plain-language warnings when the result looks wrong
+    (see :mod:`balltracker.result_checks`); it is empty when nothing does.
+    """
+    physics = config.get("physics", {})
+    g = float(physics.get("gravity_m_s2", 9.81))
+    use_drag = float(physics.get("drag_coefficient", 0.0)) > 0
+    fit = fit_trajectory(track, calib, fps=fps, g=g, use_drag=use_drag)
+    metrics = metrics_to_dict(
+        compute_metrics(
+            fit,
+            restitution=float(physics.get("restitution", 0.75)),
+            friction=float(physics.get("friction_coefficient", 0.15)),
+        )
     )
-
-    landmarks = stump_landmarks_3d()
-    stump_proj = {}
-    for key, pt in landmarks.items():
-        uv = calib.K @ (calib.R @ pt + calib.t)
-        if abs(uv[2]) > 1e-9:
-            stump_proj[key] = (uv[:2] / uv[2]).tolist()
-
     return {
         "video_path": str(video_path),
-        "metrics": metrics_to_dict(metrics),
-        "track": [
-            {
-                "frame_idx": tp.frame_idx,
-                "t_s": tp.t_s,
-                "u": tp.u,
-                "v": tp.v,
-                "radius_px": tp.radius_px,
-                "confidence": tp.confidence,
-                "predicted": tp.predicted,
-            }
-            for tp in track
-        ],
+        "metrics": metrics,
+        "track": [_track_point_dict(tp) for tp in track],
         "fit": {
             "reprojection_rmse_px": fit.reprojection_rmse,
             "bounce_time_s": fit.bounce_time_s,
@@ -359,9 +321,31 @@ def analyze_from_track(
         },
         "frame_window": {"start_frame": start_frame, "end_frame": end_frame},
         "calib_rmse_px": calib.rms_reprojection_error,
-        "stump_projections": stump_proj,
-        "manual_track": True,
+        "stump_projections": _stump_projections(calib),
+        "fps": fps,
+        "checks": result_checks(metrics, fps=fps),
     }
+
+
+def _track_point_dict(tp: TrackPoint) -> dict:
+    return {
+        "frame_idx": tp.frame_idx,
+        "t_s": tp.t_s,
+        "u": tp.u,
+        "v": tp.v,
+        "radius_px": tp.radius_px,
+        "confidence": tp.confidence,
+        "predicted": tp.predicted,
+    }
+
+
+def _stump_projections(calib: CameraCalibration) -> dict[str, list[float]]:
+    projections = {}
+    for key, pt in stump_landmarks_3d().items():
+        uv = calib.K @ (calib.R @ pt + calib.t)
+        if abs(uv[2]) > 1e-9:
+            projections[key] = (uv[:2] / uv[2]).tolist()
+    return projections
 
 
 def evaluate_against_gt(metrics: dict, gt_json_path: str | Path) -> dict:

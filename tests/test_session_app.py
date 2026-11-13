@@ -12,6 +12,7 @@ exactly where the component's click handler puts them.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sys
@@ -243,7 +244,11 @@ def test_marked_clicks_produce_a_result(app_root: Path) -> None:
     assert "**Pitch map**" in _texts(at.markdown) and "**Video replay**" in _texts(at.markdown)
     details = [m.value for m in at.markdown if m.value.startswith("Swing:")]
     assert len(details) == 1 and "Length:" in details[0]
-    assert len(list((app_root / "sessions").glob("*/session.json"))) == 1
+    session_files = list((app_root / "sessions").glob("*/session.json"))
+    assert len(session_files) == 1
+    record = json.loads(session_files[0].read_text(encoding="utf-8"))["deliveries"][0]
+    assert isinstance(record["checks"], list)
+    assert _texts(at.warning) == record["checks"]
 
     at = _click(at, "Analyze another ball")
     assert _step(at) == "2. Analyze a ball"
@@ -287,3 +292,37 @@ def test_loading_an_existing_session(app_root: Path) -> None:
     assert f"Loaded {session.id}" in _texts(at.sidebar.success)
     at = _run(app_root, at)
     assert f"Active: `{session.id}`" in _texts(at.sidebar.caption)
+
+
+def test_result_page_warns_about_an_untrustworthy_saved_result(app_root: Path) -> None:
+    """A delivery saved before result checks existed still gets its warnings.
+
+    The metrics are those of a real saved session: the fit stopped on its
+    slowest allowed release and missed the marked points.
+    """
+    from balltracker.result_checks import POOR_FIT
+    from balltracker.session import create_session
+
+    session = create_session(root=app_root / "sessions")
+    session.deliveries.append(
+        {
+            "delivery_id": "delivery_0001",
+            "source_video_path": str(app_root / "gone.mp4"),
+            "metrics": {
+                "release_speed_kmh": 29.5,
+                "pitch_line_m": -0.24,
+                "pitch_length_m": 17.79,
+                "bounce_y_m": 2.33,
+                "confidence": {"trajectory_fit_ok": False},
+            },
+        }
+    )
+    session.save()
+    at = _run(app_root)
+    at.sidebar.selectbox[0].set_value(session.id)
+    at = _click(_run(app_root, at), "Load")
+    at.radio[0].set_value("3. See result")
+    at = _run(app_root, at)
+    warnings = _texts(at.warning)
+    assert warnings[0] == POOR_FIT.format(detail="")
+    assert warnings[1].startswith("A release speed of 30 km/h is outside what real bowling")

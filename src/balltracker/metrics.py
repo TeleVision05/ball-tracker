@@ -27,6 +27,8 @@ class DeliveryMetrics:
     pitch_length_m: float
     bounce_y_m: float
     confidence: dict[str, bool] = field(default_factory=dict)
+    # Average pixel distance between the fitted path and the tracked points.
+    fit_error_px: float | None = None
 
 
 def no_spin_rebound(
@@ -101,11 +103,7 @@ def compute_metrics(
     turn_m = float(v_actual[0] - v_no_spin[0]) * 0.5  # rough lateral metres proxy
     turn_deg = float(math.degrees(_horizontal_heading(v_actual) - _horizontal_heading(v_no_spin)))
 
-    confidence = {
-        "trajectory_fit_ok": fit.reprojection_rmse < 15.0,
-        "bounce_detected": fit.bounce_time_s is not None,
-        "post_bounce_fit": fit.post is not None,
-    }
+    confidence = _confidence(fit)
 
     return DeliveryMetrics(
         release_speed_m_s=release_speed,
@@ -120,7 +118,17 @@ def compute_metrics(
         pitch_length_m=pitch_length,
         bounce_y_m=bounce_y,
         confidence=confidence,
+        fit_error_px=float(fit.reprojection_rmse),
     )
+
+
+def _confidence(fit: TrajectoryFit) -> dict[str, bool]:
+    return {
+        "trajectory_fit_ok": fit.reprojection_rmse < 15.0,
+        "bounce_detected": fit.bounce_time_s is not None,
+        "post_bounce_fit": fit.post is not None,
+        "within_fit_limits": not fit.hit_fit_limits,
+    }
 
 
 def metrics_to_dict(m: DeliveryMetrics) -> dict:

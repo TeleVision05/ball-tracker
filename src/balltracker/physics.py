@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -33,6 +34,10 @@ class TrajectoryFit:
     times: np.ndarray
     positions_3d: np.ndarray
     reprojection_rmse: float
+    # True when the pre-bounce optimiser stopped with a velocity component on
+    # its search limit. The speed and bounce are then a limit, not a measurement: on real
+    # clips this produced a steady 29 km/h (the 8 m/s floor) labelled as a fit.
+    hit_fit_limits: bool = False
 
 
 def propagate(segment: FlightSegment, times_relative: np.ndarray, g: float = 9.81) -> np.ndarray:
@@ -159,61 +164,21 @@ def _fit_segment(
     z_end: float | None = None,
     t_end: float | None = None,
     fix_start: bool = False,
-) -> tuple[FlightSegment, np.ndarray, np.ndarray]:
-    """Fit one ballistic segment via reprojection + ray-distance residuals."""
+) -> tuple[FlightSegment, np.ndarray, np.ndarray, bool]:
+    """Fit one ballistic segment via reprojection + ray-distance residuals.
+
+    The last value is True when a velocity component sits on its search limit.
+    (A release position on its limit is common on clean synthetic deliveries
+    and costs little accuracy, so it is not reported.)
+    """
     times = np.array([tp.t_s for tp in track_slice], dtype=np.float64)
     uvs = np.array([[tp.u, tp.v] for tp in track_slice], dtype=np.float64)
     t_rel = times - t0
-    origins = []
-    directions = []
-    for uv in uvs:
-        o, d = backproject_ray(calib, uv)
-        origins.append(o)
-        directions.append(d)
-    origins_a = np.asarray(origins)
-    dirs_a = np.asarray(directions)
-
-    if fix_start:
-        # Optimise velocity (and optional drag) only; keep x0 fixed.
-        def pack(v0: np.ndarray, drag: float) -> np.ndarray:
-            return np.concatenate([v0, [drag]]) if use_drag else v0.copy()
-
-        def unpack(params: np.ndarray) -> tuple[np.ndarray, float]:
-            if use_drag:
-                return params[:3], float(params[3])
-            return params[:3], 0.0
-
-        lower = np.array([-25.0, 8.0, -40.0] + ([0.0] if use_drag else []), dtype=np.float64)
-        upper = np.array([25.0, 55.0, 15.0] + ([1.0] if use_drag else []), dtype=np.float64)
-        p0 = pack(v0_init, 0.0)
-        x0_fixed = x0_init.copy()
-    else:
-
-        def unpack(params: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
-            x0 = params[:3]
-            v0 = params[3:6]
-            drag = float(params[6]) if use_drag else 0.0
-            return x0, v0, drag
-
-        lower = np.array(
-            [-3.0, 0.0, 0.8, -25.0, 8.0, -40.0] + ([0.0] if use_drag else []),
-            dtype=np.float64,
-        )
-        upper = np.array(
-            [3.0, 6.0, 3.2, 25.0, 55.0, 15.0] + ([1.0] if use_drag else []),
-            dtype=np.float64,
-        )
-        p0 = np.concatenate([x0_init, v0_init] + ([0.0] if use_drag else []))
-        x0_fixed = None
-
-    p0 = np.clip(p0, lower[: len(p0)], upper[: len(p0)])
+    origins_a, dirs_a = _rays(calib, uvs)
+    p0, lower, upper, decode, velocity = _search_space(x0_init, v0_init, use_drag, fix_start)
 
     def residuals(params: np.ndarray) -> np.ndarray:
-        if fix_start:
-            v0, drag = unpack(params)
-            x0 = x0_fixed
-        else:
-            x0, v0, drag = unpack(params)
+        x0, v0, drag = decode(params)
         seg = FlightSegment(t0=t0, x0=x0, v0=v0, drag_coeff=drag)
         pos = propagate(seg, t_rel, g=g)
         proj = project_points(calib, pos)
@@ -235,21 +200,60 @@ def _fit_segment(
     result = least_squares(
         residuals,
         p0,
-        bounds=(lower[: len(p0)], upper[: len(p0)]),
+        bounds=(lower, upper),
         max_nfev=800,
         ftol=1e-8,
         xtol=1e-8,
     )
-
-    if fix_start:
-        v0, drag = unpack(result.x)
-        x0 = x0_fixed
-    else:
-        x0, v0, drag = unpack(result.x)
-
+    x0, v0, drag = decode(result.x)
     seg = FlightSegment(t0=t0, x0=x0, v0=v0, drag_coeff=drag)
     positions = propagate(seg, t_rel, g=g)
-    return seg, times, positions
+    return seg, times, positions, bool(np.any(result.active_mask[velocity] != 0))
+
+
+# Search limits for the release position (x, y, z) and velocity (vx, vy, vz).
+_POSITION_LOWER = [-3.0, 0.0, 0.8]
+_POSITION_UPPER = [3.0, 6.0, 3.2]
+_VELOCITY_LOWER = [-25.0, 8.0, -40.0]
+_VELOCITY_UPPER = [25.0, 55.0, 15.0]
+
+
+def _rays(calib: CameraCalibration, uvs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Camera ray origin and direction for every tracked pixel."""
+    pairs = [backproject_ray(calib, uv) for uv in uvs]
+    return np.asarray([o for o, _ in pairs]), np.asarray([d for _, d in pairs])
+
+
+def _search_space(
+    x0_init: np.ndarray, v0_init: np.ndarray, use_drag: bool, fix_start: bool
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, Callable, slice]:
+    """Start vector, bounds, a decoder to ``(x0, v0, drag)`` and the velocity slice.
+
+    With ``fix_start`` only the velocity (and optional drag) is optimised and
+    the start position stays at ``x0_init``.
+    """
+    drag_lower, drag_upper, drag_start = ([0.0], [1.0], [0.0]) if use_drag else ([], [], [])
+    if fix_start:
+        lower = _VELOCITY_LOWER + drag_lower
+        upper = _VELOCITY_UPPER + drag_upper
+        start = [v0_init, drag_start]
+        first_v = 0
+    else:
+        lower = _POSITION_LOWER + _VELOCITY_LOWER + drag_lower
+        upper = _POSITION_UPPER + _VELOCITY_UPPER + drag_upper
+        start = [x0_init, v0_init, drag_start]
+        first_v = 3
+    x0_fixed = x0_init.copy()
+
+    def decode(params: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
+        x0 = x0_fixed if fix_start else params[:3]
+        drag = float(params[first_v + 3]) if use_drag else 0.0
+        return x0, params[first_v : first_v + 3], drag
+
+    lower_a = np.array(lower, dtype=np.float64)
+    upper_a = np.array(upper, dtype=np.float64)
+    p0 = np.clip(np.concatenate(start).astype(np.float64), lower_a, upper_a)
+    return p0, lower_a, upper_a, decode, slice(first_v, first_v + 3)
 
 
 def fit_trajectory(
@@ -273,7 +277,7 @@ def fit_trajectory(
     t_bounce = track[bounce_idx].t_s
 
     # Seed release on ray at observed release pixel with free depth via optimisation.
-    pre_seg, pre_times, pre_pos = _fit_segment(
+    pre_seg, pre_times, pre_pos, pre_at_limit = _fit_segment(
         pre_slice,
         calib,
         t0=t0,
@@ -286,46 +290,14 @@ def fit_trajectory(
         fix_start=False,
     )
 
-    bounce_pos = propagate(pre_seg, np.array([t_bounce - t0]), g=g)[0]
-    # Snap bounce onto pitch plane while keeping XY from the fit / plane cue.
-    plane_hit = ray_plane_intersection(calib, (track[bounce_idx].u, track[bounce_idx].v))
-    if plane_hit is not None and 3.0 <= plane_hit[1] <= PITCH_LENGTH_M + 1.5:
-        bounce_pos = plane_hit.copy()
-        bounce_pos[2] = BALL_RADIUS_M
-        # Re-fit velocity with fixed end constraint by adjusting v0 from release->bounce.
-        dt = max(t_bounce - t0, 1e-3)
-        accel = np.array([0.0, 0.0, -g], dtype=np.float64)
-        v0_refined = (bounce_pos - pre_seg.x0) / dt - 0.5 * accel * dt
-        pre_seg = FlightSegment(
-            t0=pre_seg.t0,
-            x0=pre_seg.x0,
-            v0=v0_refined,
-            drag_coeff=pre_seg.drag_coeff,
-        )
-        pre_pos = propagate(pre_seg, pre_times - t0, g=g)
-        bounce_pos = propagate(pre_seg, np.array([t_bounce - t0]), g=g)[0]
-        bounce_pos[2] = BALL_RADIUS_M
+    pre_seg, pre_pos, bounce_pos = _snap_bounce_to_pitch(
+        pre_seg, pre_times, calib, track[bounce_idx], t_bounce, g
+    )
 
     bounce_vel = velocity_at(pre_seg, t_bounce - t0, g=g)
-
-    post_seg: FlightSegment | None = None
-    post_times = np.array([], dtype=np.float64)
-    post_pos = np.zeros((0, 3), dtype=np.float64)
-
-    if bounce_idx < len(track) - 3:
-        post_slice = track[bounce_idx:]
-        v_post_init = bounce_vel.copy()
-        v_post_init[2] = abs(0.75 * bounce_vel[2])
-        post_seg, post_times, post_pos = _fit_segment(
-            post_slice,
-            calib,
-            t0=t_bounce,
-            x0_init=bounce_pos,
-            v0_init=v_post_init,
-            g=g,
-            use_drag=False,
-            fix_start=True,
-        )
+    post_seg, post_times, post_pos = _fit_post_bounce(
+        track[bounce_idx:], calib, bounce_pos, bounce_vel, t_bounce, g
+    )
 
     if len(post_times):
         all_times = np.concatenate([pre_times, post_times[1:]])
@@ -334,15 +306,7 @@ def fit_trajectory(
         all_times = pre_times
         all_pos = pre_pos
 
-    n = min(len(track), len(all_times))
-    uvs = np.array([[tp.u, tp.v] for tp in track[:n]], dtype=np.float64)
-    proj = project_points(calib, all_pos[:n])
-    valid = np.isfinite(proj).all(axis=1)
-    if np.any(valid):
-        err = proj[valid] - uvs[valid]
-        rmse = float(np.sqrt(np.mean(np.sum(err**2, axis=1))))
-    else:
-        rmse = float("inf")
+    rmse = _track_rmse(track, calib, all_pos)
 
     return TrajectoryFit(
         pre=pre_seg,
@@ -352,4 +316,72 @@ def fit_trajectory(
         times=all_times,
         positions_3d=all_pos,
         reprojection_rmse=rmse,
+        hit_fit_limits=pre_at_limit,
     )
+
+
+def _fit_post_bounce(
+    post_slice: list[TrackPoint],
+    calib: CameraCalibration,
+    bounce_pos: np.ndarray,
+    bounce_vel: np.ndarray,
+    t_bounce: float,
+    g: float,
+) -> tuple[FlightSegment | None, np.ndarray, np.ndarray]:
+    """Fit the flight after the bounce, when at least four points follow it."""
+    if len(post_slice) < 4:
+        return None, np.array([], dtype=np.float64), np.zeros((0, 3), dtype=np.float64)
+    v_post_init = bounce_vel.copy()
+    v_post_init[2] = abs(0.75 * bounce_vel[2])
+    post_seg, post_times, post_pos, _at_limit = _fit_segment(
+        post_slice,
+        calib,
+        t0=t_bounce,
+        x0_init=bounce_pos,
+        v0_init=v_post_init,
+        g=g,
+        use_drag=False,
+        fix_start=True,
+    )
+    return post_seg, post_times, post_pos
+
+
+def _snap_bounce_to_pitch(
+    pre_seg: FlightSegment,
+    pre_times: np.ndarray,
+    calib: CameraCalibration,
+    bounce_point: TrackPoint,
+    t_bounce: float,
+    g: float,
+) -> tuple[FlightSegment, np.ndarray, np.ndarray]:
+    """Snap the bounce onto the pitch plane and re-aim the release velocity at it."""
+    t0 = pre_seg.t0
+    bounce_pos = propagate(pre_seg, np.array([t_bounce - t0]), g=g)[0]
+    pre_pos = propagate(pre_seg, pre_times - t0, g=g)
+    # Snap bounce onto pitch plane while keeping XY from the fit / plane cue.
+    plane_hit = ray_plane_intersection(calib, (bounce_point.u, bounce_point.v))
+    if plane_hit is None or not (3.0 <= plane_hit[1] <= PITCH_LENGTH_M + 1.5):
+        return pre_seg, pre_pos, bounce_pos
+    bounce_pos = plane_hit.copy()
+    bounce_pos[2] = BALL_RADIUS_M
+    # Re-fit velocity with fixed end constraint by adjusting v0 from release->bounce.
+    dt = max(t_bounce - t0, 1e-3)
+    accel = np.array([0.0, 0.0, -g], dtype=np.float64)
+    v0_refined = (bounce_pos - pre_seg.x0) / dt - 0.5 * accel * dt
+    pre_seg = FlightSegment(t0=t0, x0=pre_seg.x0, v0=v0_refined, drag_coeff=pre_seg.drag_coeff)
+    pre_pos = propagate(pre_seg, pre_times - t0, g=g)
+    bounce_pos = propagate(pre_seg, np.array([t_bounce - t0]), g=g)[0]
+    bounce_pos[2] = BALL_RADIUS_M
+    return pre_seg, pre_pos, bounce_pos
+
+
+def _track_rmse(track: list[TrackPoint], calib: CameraCalibration, positions: np.ndarray) -> float:
+    """Root-mean-square pixel distance between the fit and the tracked points."""
+    n = min(len(track), len(positions))
+    uvs = np.array([[tp.u, tp.v] for tp in track[:n]], dtype=np.float64)
+    proj = project_points(calib, positions[:n])
+    valid = np.isfinite(proj).all(axis=1)
+    if not np.any(valid):
+        return float("inf")
+    err = proj[valid] - uvs[valid]
+    return float(np.sqrt(np.mean(np.sum(err**2, axis=1))))

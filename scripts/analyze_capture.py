@@ -56,6 +56,8 @@ def main() -> None:
             f"Pitch length: {metrics['pitch_length_m']:.2f} m | "
             f"Line: {metrics['pitch_line_m']:.3f} m"
         )
+    for check in result.get("checks", []):
+        print(f"Check this result: {check}")
 
 
 if __name__ == "__main__":

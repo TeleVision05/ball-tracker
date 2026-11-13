@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from ..plain_language import summarize_delivery
+from ..result_checks import result_checks
 from ..session import list_deliveries
 from ..user_messages import describe_error
 from ..viz import draw_pitch_map, ensure_web_playable
@@ -66,9 +67,19 @@ def _replay(record: dict) -> None:
             st.error("No video found on disk.")
 
 
+def delivery_checks(record: dict) -> list[str]:
+    """Warnings saved with the delivery, or worked out from its metrics for older records."""
+    saved = record.get("checks")
+    if saved is not None:
+        return list(saved)
+    return result_checks(record.get("metrics", {}))
+
+
 def _show_delivery(record: dict) -> None:
     metrics = record.get("metrics", {})
     summary = summarize_delivery(metrics)
+    for check in delivery_checks(record):
+        st.warning(check)
 
     m1, m2 = st.columns(2)
     with m1:
