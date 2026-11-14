@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -23,6 +25,8 @@ from .physics import fit_trajectory
 from .plain_language import summarize_delivery
 from .result_checks import result_checks
 from .tracking import TrackPoint, track_video
+
+logger = logging.getLogger(__name__)
 
 _NO_TIMESTAMPS = "No presentation timestamps; times use frame index divided by fps."
 _PARTIAL_TIMESTAMPS = "Some track frames have no presentation timestamp."
@@ -264,11 +268,32 @@ def _encoded_frame_size(video_path: Path) -> tuple[int, int]:
 _UPRIGHT_CODECS: tuple[tuple[str, str], ...] = (("FFV1", ".mkv"), ("mp4v", ".mp4"))
 
 
+# FFV1 measured about 1.05 bytes per pixel on real clips; assume a little more and
+# insist on twice that much free space so a long phone clip cannot fill the disk.
+_FFV1_BYTES_PER_PIXEL = 1.2
+_FFV1_FREE_SPACE_MARGIN = 2.0
+
+
+def _lossless_copy_fits(size: tuple[int, int], frame_count: int) -> bool:
+    needed = size[0] * size[1] * max(frame_count, 1) * _FFV1_BYTES_PER_PIXEL
+    try:
+        free = shutil.disk_usage(tempfile.gettempdir()).free
+    except OSError:
+        return True
+    return free >= needed * _FFV1_FREE_SPACE_MARGIN
+
+
 def _open_upright_writer(
-    fps: float, size: tuple[int, int]
+    fps: float, size: tuple[int, int], frame_count: int = 0
 ) -> tuple[cv2.VideoWriter, Path] | tuple[None, None]:
-    """Open a temporary writer, lossless when this OpenCV build allows it."""
+    """Open a temporary writer, lossless when this OpenCV build and the disk allow it."""
     for fourcc, suffix in _UPRIGHT_CODECS:
+        if fourcc == "FFV1" and not _lossless_copy_fits(size, frame_count):
+            logger.warning(
+                "Not enough free disk for a lossless copy of %d frames; using a lossy copy",
+                frame_count,
+            )
+            continue
         descriptor, name = tempfile.mkstemp(suffix=suffix)
         os.close(descriptor)
         path = Path(name)
@@ -292,7 +317,8 @@ def _write_rotated_video(video_path: Path, rotate_code: int) -> tuple[Path, tupl
             raise VideoOpenError(f"Cannot read frames from {video_path}")
         upright = cv2.rotate(frame, rotate_code)
         height, width = upright.shape[:2]
-        writer, temp_path = _open_upright_writer(writer_fps, (width, height))
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        writer, temp_path = _open_upright_writer(writer_fps, (width, height), frame_count)
         if writer is None or temp_path is None:
             raise RuntimeError("Failed to open an upright video writer")
         writer.write(upright)

@@ -231,3 +231,24 @@ def test_orientation_hint_rotates_encoded_buffer_once(tmp_path: Path) -> None:
     finally:
         if temporary:
             upright.unlink(missing_ok=True)
+
+
+def test_upright_copy_falls_back_to_lossy_when_the_disk_is_too_full(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from collections import namedtuple
+
+    from balltracker import capture_analysis
+
+    source = tmp_path / "wide.mp4"
+    writer = cv2.VideoWriter(str(source), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (4, 2))
+    writer.write(np.zeros((2, 4, 3), dtype=np.uint8))
+    writer.release()
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(capture_analysis.shutil, "disk_usage", lambda _p: usage(10, 10, 0))
+
+    upright, _size, temporary = upright_video(source, 90)
+    try:
+        assert temporary and upright.suffix == ".mp4"  # not the lossless .mkv
+    finally:
+        upright.unlink(missing_ok=True)
