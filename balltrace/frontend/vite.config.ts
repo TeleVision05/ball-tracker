@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
+// Same variable the backend reads, so the dev proxy follows a changed port.
+const backendPort = process.env.BALLTRACE_PORT ?? '8000'
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -13,7 +16,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
       },
     },

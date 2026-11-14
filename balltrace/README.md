@@ -80,7 +80,7 @@ Environment variables, read when the backend starts:
 | Variable | Default | What it does |
 |---|---|---|
 | `BALLTRACE_HOST` | `127.0.0.1` | Address `python -m app` listens on. See the security model above before changing it. |
-| `BALLTRACE_PORT` | `8000` | Port `python -m app` listens on. The frontend dev server proxies `/api` to `127.0.0.1:8000`. |
+| `BALLTRACE_PORT` | `8000` | Port `python -m app` listens on. Start `npm run dev` with the same `BALLTRACE_PORT` and its `/api` proxy follows. |
 | `BALLTRACE_MAX_UPLOAD_MB` | `500` | Largest video accepted. Bigger files are refused with a message that names the limit. The frontend reads it from `GET /api/limits`. |
 
 A value that is not a positive whole number is ignored and the default is used.
