@@ -1,7 +1,8 @@
 """Fast synthetic accuracy check: a regression in the fit or the metrics fails CI.
 
-Runs a small, seeded version of ``balltracker benchmark``. Bounds are roughly
-two to three times the errors measured on 2026-11-13, so ordinary changes pass
+Runs a small, seeded version of ``balltracker benchmark`` (16 deliveries, so the
+measured values differ from the 500-case report). Bounds are roughly two to three
+times the 16-case errors measured on 2026-11-13, so ordinary changes pass
 and a broken fit does not. Synthetic only: see docs/ACCURACY.md.
 """
 
@@ -19,15 +20,15 @@ N_CASES = 16
 # metric -> (max median abs error, max 90th percentile abs error), in report units.
 PIPELINE_BOUNDS = {
     "release_speed_kmh": (12.0, 30.0),
-    "bounce_line_m": (6.0, 15.0),
+    "bounce_line_m": (4.5, 10.0),
     "bounce_length_m": (150.0, 350.0),
-    "turn_deg": (4.0, 12.0),
+    "turn_deg": (2.5, 7.0),
 }
 NOISE_FREE_BOUNDS = {
     "release_speed_kmh": (6.0, 15.0),
-    "bounce_line_m": (1.5, 3.0),
-    "bounce_length_m": (40.0, 120.0),
-    "turn_deg": (2.0, 5.0),
+    "bounce_line_m": (0.6, 1.8),
+    "bounce_length_m": (35.0, 120.0),
+    "turn_deg": (1.2, 3.0),
 }
 
 

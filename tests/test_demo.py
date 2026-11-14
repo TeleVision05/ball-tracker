@@ -100,3 +100,21 @@ def test_benchmark_command_writes_report(tmp_path: Path) -> None:
     text = report.read_text()
     assert text.startswith("# Accuracy: synthetic deliveries only")
     assert "`balltracker benchmark --n 3 --seed 5`" in text
+
+
+@pytest.mark.parametrize("command", ["demo", "benchmark"])
+def test_negative_seed_gets_a_plain_message_not_a_traceback(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as stop:
+        cli.main([command, "--seed", "-5"])
+    assert stop.value.code == 2
+    err = capsys.readouterr().err
+    assert "--seed must be 0 or more" in err
+    assert "Traceback" not in err
+
+
+def test_benchmark_defaults_to_a_report_path_that_is_not_committed() -> None:
+    args = cli.build_parser().parse_args(["benchmark"])
+    assert args.out == cli.DEFAULT_REPORT_PATH
+    assert args.out.parts[0] == "out"

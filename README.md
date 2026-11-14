@@ -42,7 +42,7 @@ The install pulls in OpenCV, MediaPipe and Streamlit, so it is the slow part. Th
 
 The estimates are not exact. In the run shown above the speed reads 142.8 km/h against a true 134.0, and the bounce is 0.56 m fuller than it was. [docs/ACCURACY.md](docs/ACCURACY.md) shows that this is typical and where the error comes from.
 
-To measure accuracy over many synthetic deliveries, run `balltracker benchmark`. It takes about a minute and a half and rewrites `docs/ACCURACY.md`.
+To measure accuracy over many synthetic deliveries, run `balltracker benchmark`. It takes about a minute and a half and writes `out/benchmark/ACCURACY.md`, which git ignores. To regenerate the committed report, run `balltracker benchmark --n 500 --seed 20261113 --out docs/ACCURACY.md`.
 
 ## Run it on your own clip
 

@@ -80,8 +80,25 @@ def _print_demo(summary: dict, out_dir: Path) -> None:
         )
 
 
+DEFAULT_REPORT_PATH = Path("out/benchmark/ACCURACY.md")
+
+
+def _seed_value(text: str) -> int:
+    """argparse type: a whole number that is 0 or more (numpy cannot seed with less)."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("--seed must be a whole number, 0 or more.") from None
+    if value < 0:
+        raise argparse.ArgumentTypeError("--seed must be 0 or more.")
+    return value
+
+
 def run_demo_command(out_dir: Path, seed: int) -> int:
     """Run the demo and translate failures into plain messages. Returns an exit code."""
+    if seed < 0:
+        print("--seed must be 0 or more.")
+        return 2
     from .demo import run_demo
     from .demo_scene import VideoWriteError
 
@@ -123,6 +140,9 @@ def run_benchmark_command(n: int, seed: int, out_path: Path) -> int:
     if n < 1:
         print("--n must be at least 1.")
         return 2
+    if seed < 0:
+        print("--seed must be 0 or more.")
+        return 2
     rows_by_mode = {}
     for mode in MODES:
         print(f"Running {n} synthetic deliveries (seed {seed}, {mode.replace('_', ' ')}) ...")
@@ -156,12 +176,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     demo = sub.add_parser("demo", help="Run the whole pipeline on a synthetic delivery")
     demo.add_argument("--out", type=Path, default=Path("out/demo"), help="Output folder")
-    demo.add_argument("--seed", type=int, default=DEMO_SEED, help="Seed for click noise")
+    demo.add_argument("--seed", type=_seed_value, default=DEMO_SEED, help="Seed for click noise")
     bench = sub.add_parser("benchmark", help="Measure accuracy on many synthetic deliveries")
     bench.add_argument("--n", type=int, default=DEFAULT_N, help="Number of deliveries")
-    bench.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Random seed")
+    bench.add_argument("--seed", type=_seed_value, default=DEFAULT_SEED, help="Random seed")
     bench.add_argument(
-        "--out", type=Path, default=Path("docs/ACCURACY.md"), help="Markdown report path"
+        "--out",
+        type=Path,
+        default=DEFAULT_REPORT_PATH,
+        help="Markdown report path (the committed report is docs/ACCURACY.md; "
+        "pass that path to regenerate it)",
     )
     return parser
 
