@@ -326,3 +326,96 @@ def test_reupload_with_a_different_extension_does_not_orphan_the_old_file(
     assert upload(client, analysis_id, tiny_video.read_bytes(), name="clip.mov").status_code == 200
     names = [p.name for p in (config.ANALYSES_DIR / analysis_id).iterdir()]
     assert names == ["source.mov"]
+
+
+# --- round 2: case-different extensions, running analyses, failed record update ---------
+
+
+def test_reupload_with_an_extension_that_differs_only_in_case_keeps_the_video(
+    client, analysis_id, tiny_video
+):
+    data = tiny_video.read_bytes()
+    assert upload(client, analysis_id, data, name="CLIP.MP4").status_code == 200
+    assert upload(client, analysis_id, data, name="clip.mp4").status_code == 200
+    served = client.get(f"/api/analyses/{analysis_id}/video")
+    assert served.status_code == 200 and served.content == data
+    # Extensions are stored lower-case, so this holds on any filesystem.
+    assert [p.name for p in (config.ANALYSES_DIR / analysis_id).iterdir()] == ["source.mp4"]
+
+
+def test_old_copy_is_kept_when_it_is_the_same_file_as_the_new_one(
+    client, analysis_id, tiny_video, monkeypatch
+):
+    """A legacy upper-case copy that the OS treats as the new file must not be deleted."""
+    data = tiny_video.read_bytes()
+    assert upload(client, analysis_id, data).status_code == 200
+    folder = config.ANALYSES_DIR / analysis_id
+    row = run(db.get_analysis(analysis_id))
+    alias = folder / "source.MP4"
+    run(db.update_analysis(analysis_id, video_path=str(alias)))
+    monkeypatch.setattr(routes.os.path, "samefile", lambda a, b: True)
+    assert upload(client, analysis_id, data).status_code == 200
+    assert Path(row["video_path"]).exists()
+
+
+def test_reupload_is_refused_while_the_analysis_is_running(client, analysis_id, uploaded):
+    original, before = uploaded
+    run(db.update_analysis(analysis_id, status="analyzing"))
+    response = upload(client, analysis_id, original, name="other.mp4")
+    detail = assert_friendly(response, 409, "analysis_running")
+    assert "Wait for it to finish" in detail
+    assert run(db.get_analysis(analysis_id))["status"] == "analyzing"
+    assert client.get(f"/api/analyses/{analysis_id}/video").content == original
+
+
+def test_failed_record_update_restores_the_old_video(
+    client, analysis_id, uploaded, tiny_video, monkeypatch
+):
+    original, before = uploaded
+    real = db.update_analysis
+
+    async def broken(*_a, **_k):
+        raise RuntimeError(RAW)
+
+    monkeypatch.setattr(db, "update_analysis", broken)
+    new = tiny_video.read_bytes() + b"\0" * 16
+    response = upload(client, analysis_id, new)
+    assert response.status_code == 500 and RAW not in response.text
+    monkeypatch.setattr(db, "update_analysis", real)
+    _assert_original_intact(client, analysis_id, original, before)
+
+
+def test_failed_record_update_on_a_different_extension_removes_the_new_file(
+    client, analysis_id, uploaded, tiny_video, monkeypatch
+):
+    original, before = uploaded
+
+    async def broken(*_a, **_k):
+        raise RuntimeError(RAW)
+
+    monkeypatch.setattr(db, "update_analysis", broken)
+    assert upload(client, analysis_id, tiny_video.read_bytes(), name="x.mov").status_code == 500
+    names = [p.name for p in (config.ANALYSES_DIR / analysis_id).iterdir()]
+    assert names == [Path(before["video_path"]).name]
+
+
+def test_startup_sweeps_stale_temporary_uploads_only(isolated_data):
+    import os
+    import time
+
+    from app.upload_cleanup import sweep_stale_uploads
+
+    folder = config.ANALYSES_DIR / "a1"
+    folder.mkdir(parents=True)
+    stale, fresh, keep = (
+        folder / ".incoming-old.mp4",
+        folder / ".incoming-new.mp4",
+        folder / "source.mp4",
+    )
+    for path in (stale, fresh, keep):
+        path.write_bytes(b"x")
+    old = time.time() - 2 * 3600
+    os.utime(stale, (old, old))
+    os.utime(keep, (old, old))
+    assert sweep_stale_uploads() == 1
+    assert not stale.exists() and fresh.exists() and keep.exists()

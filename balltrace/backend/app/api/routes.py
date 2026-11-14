@@ -23,6 +23,7 @@ from app.config import (
     ensure_directories,
 )
 from app.friendly_errors import app_error, describe
+from app.upload_cleanup import TEMP_BACKUP_PREFIX, TEMP_UPLOAD_PREFIX
 from app.models import database as db
 from app.models.schemas import (
     Analysis,
@@ -195,12 +196,12 @@ def _save_upload_within_limit(file: UploadFile, dest_path: Path) -> None:
 
 
 def _receive_and_validate_upload(file: UploadFile, final_path: Path, analysis_id: str):
-    """Write the upload to a temporary file, check it, then move it into place.
+    """Write the upload to a temporary file and check it. Returns (temp_path, metadata).
 
-    Anything that goes wrong leaves the analysis's existing video untouched and
-    no temporary file behind. Returns the video metadata.
+    Nothing is moved into place here, so any failure leaves the analysis's existing
+    video untouched and no temporary file behind.
     """
-    temp_path = final_path.with_name(f".incoming-{uuid.uuid4().hex}{final_path.suffix}")
+    temp_path = final_path.with_name(f"{TEMP_UPLOAD_PREFIX}{uuid.uuid4().hex}{final_path.suffix}")
     try:
         _save_upload_within_limit(file, temp_path)
         try:
@@ -209,42 +210,74 @@ def _receive_and_validate_upload(file: UploadFile, final_path: Path, analysis_id
             raise describe(
                 exc, f"reading the uploaded video for analysis_id={analysis_id}"
             ).to_app_error() from exc
-        os.replace(temp_path, final_path)
-        return meta
+        return temp_path, meta
     except BaseException:
         temp_path.unlink(missing_ok=True)
         raise
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
 @router.post("/analyses/{analysis_id}/upload", response_model=Analysis)
 async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
     row = await _get_analysis_or_404(analysis_id)
+    if row["status"] == "analyzing":
+        raise app_error("analysis_running")
 
     target_dir = analysis_dir(analysis_id)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    suffix = Path(file.filename or "video.mp4").suffix or ".mp4"
+    # Lower-case so "CLIP.MP4" and "clip.mp4" are one name on every filesystem.
+    suffix = (Path(file.filename or "video.mp4").suffix or ".mp4").lower()
     dest_path = target_dir / f"source{suffix}"
 
     try:
-        meta = _receive_and_validate_upload(file, dest_path, analysis_id)
+        temp_path, meta = _receive_and_validate_upload(file, dest_path, analysis_id)
+        await _swap_in_and_record(analysis_id, row, temp_path, dest_path, meta)
     finally:
         _remove_folder_if_empty(target_dir)
-
-    await db.update_analysis(
-        analysis_id,
-        video_path=str(dest_path),
-        video_width=meta["width"],
-        video_height=meta["height"],
-        fps=meta["fps"],
-        duration=meta["duration"],
-        frame_count=meta["frame_count"],
-        status="uploaded",
-        error=None,
-    )
-    _remove_replaced_video(row.get("video_path"), dest_path)
     row = await db.get_analysis(analysis_id)
     return _row_to_analysis(row)
+
+
+async def _swap_in_and_record(
+    analysis_id: str, row: Dict[str, Any], temp_path: Path, dest_path: Path, meta: Dict[str, Any]
+) -> None:
+    """Move the checked upload into place and update the record; undo the move on failure."""
+    backup: Optional[Path] = None
+    try:
+        if dest_path.exists():
+            backup = dest_path.with_name(
+                f"{TEMP_BACKUP_PREFIX}{uuid.uuid4().hex}{dest_path.suffix}"
+            )
+            os.replace(dest_path, backup)
+        os.replace(temp_path, dest_path)
+        await db.update_analysis(
+            analysis_id,
+            video_path=str(dest_path),
+            video_width=meta["width"],
+            video_height=meta["height"],
+            fps=meta["fps"],
+            duration=meta["duration"],
+            frame_count=meta["frame_count"],
+            status="uploaded",
+            error=None,
+        )
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        if backup is not None:
+            os.replace(backup, dest_path)
+        else:
+            dest_path.unlink(missing_ok=True)
+        raise
+    if backup is not None:
+        backup.unlink(missing_ok=True)
+    _remove_replaced_video(row.get("video_path"), dest_path)
 
 
 def _remove_folder_if_empty(folder: Path) -> None:
@@ -255,9 +288,13 @@ def _remove_folder_if_empty(folder: Path) -> None:
 
 
 def _remove_replaced_video(old_path: Optional[str], new_path: Path) -> None:
-    """Delete the previous copy once the record points at the new one (different extension)."""
-    if old_path and Path(old_path) != new_path:
-        Path(old_path).unlink(missing_ok=True)
+    """Delete the previous copy (different name) once the record points at the new one."""
+    if not old_path:
+        return
+    old = Path(old_path)
+    if old == new_path or _same_file(old, new_path):
+        return
+    old.unlink(missing_ok=True)
 
 
 @router.post("/analyses/{analysis_id}/start")

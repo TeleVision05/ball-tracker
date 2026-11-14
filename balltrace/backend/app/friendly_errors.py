@@ -43,6 +43,10 @@ _CATALOGUE = {
         "That video is larger than the {limit_mb} MB limit. "
         "Trim or compress it, then upload it again.",
     ),
+    "analysis_running": (
+        409,
+        "This video is being analysed. Wait for it to finish, then upload again.",
+    ),
     "video_unreadable": (
         400,
         "We couldn't read that video. Use an MP4 or MOV file that plays on your "

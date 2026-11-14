@@ -12,6 +12,7 @@ from app.config import CORS_ORIGINS, ensure_directories
 from app.error_handlers import register_error_handlers
 from app.logging_config import get_logger, setup_logging
 from app.models.database import init_db
+from app.upload_cleanup import sweep_stale_uploads
 from app.upload_limit import UploadSizeLimitMiddleware
 
 setup_logging()
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     ensure_directories()
     await init_db()
+    sweep_stale_uploads()
     logger.info("BallTrace backend started")
     yield
     logger.info("BallTrace backend shutting down")
