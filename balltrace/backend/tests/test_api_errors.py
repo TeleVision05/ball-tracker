@@ -223,3 +223,106 @@ def test_launcher_uses_the_configured_host_and_warns_when_exposed(monkeypatch, c
         launcher.main()
     assert started["host"] == "0.0.0.0"
     assert "no login" in caplog.text
+
+
+# --- re-upload must never damage the good video --------------------------------------
+
+
+def _stored_video(analysis_id: str) -> Path:
+    return Path(run(db.get_analysis(analysis_id))["video_path"])
+
+
+def _assert_original_intact(client, analysis_id: str, original: bytes, before: dict) -> None:
+    served = client.get(f"/api/analyses/{analysis_id}/video")
+    assert served.status_code == 200
+    assert served.content == original
+    after = run(db.get_analysis(analysis_id))
+    for key in ("video_path", "video_width", "video_height", "fps", "frame_count", "status"):
+        assert after[key] == before[key], key
+    leftovers = [p.name for p in (config.ANALYSES_DIR / analysis_id).iterdir()]
+    assert leftovers == [Path(before["video_path"]).name], leftovers
+
+
+@pytest.fixture
+def uploaded(client, analysis_id, tiny_video):
+    original = tiny_video.read_bytes()
+    assert upload(client, analysis_id, original).status_code == 200
+    return original, dict(run(db.get_analysis(analysis_id)))
+
+
+def test_reupload_between_limit_and_envelope_keeps_the_original(
+    client, analysis_id, uploaded, monkeypatch
+):
+    original, before = uploaded
+    monkeypatch.setattr(config, "MAX_UPLOAD_MB", 1)
+    response = upload(client, analysis_id, b"x" * (MB + MB // 2), name="a.mp4")
+    assert_friendly(response, 413, "upload_too_large")
+    _assert_original_intact(client, analysis_id, original, before)
+
+
+def test_reupload_far_over_the_limit_keeps_the_original(client, analysis_id, uploaded, monkeypatch):
+    original, before = uploaded
+    monkeypatch.setattr(config, "MAX_UPLOAD_MB", 1)
+    assert_friendly(
+        upload(client, analysis_id, b"x" * (3 * MB)),
+        413,
+        "upload_too_large",
+    )
+    _assert_original_intact(client, analysis_id, original, before)
+
+
+def test_chunked_reupload_over_the_limit_keeps_the_original(
+    client, analysis_id, uploaded, monkeypatch
+):
+    original, before = uploaded
+    monkeypatch.setattr(config, "MAX_UPLOAD_MB", 1)
+    boundary = "xBOUNDARYx"
+
+    def body():
+        yield (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
+            'filename="c.mp4"\r\nContent-Type: video/mp4\r\n\r\n'
+        ).encode()
+        for _ in range(5):
+            yield b"x" * MB
+        yield f"\r\n--{boundary}--\r\n".encode()
+
+    response = client.post(
+        f"/api/analyses/{analysis_id}/upload",
+        content=body(),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    assert_friendly(response, 413, "upload_too_large")
+    _assert_original_intact(client, analysis_id, original, before)
+
+
+def test_reupload_of_a_corrupt_file_keeps_the_original(client, analysis_id, uploaded):
+    original, before = uploaded
+    response = upload(client, analysis_id, b"j" * 100, name="junk.mp4")
+    assert_friendly(response, 400, "video_unreadable")
+    _assert_original_intact(client, analysis_id, original, before)
+
+
+def test_failed_first_upload_leaves_no_file_and_start_is_refused(client, analysis_id):
+    assert_friendly(upload(client, analysis_id, b"j" * 100), 400, "video_unreadable")
+    folder = config.ANALYSES_DIR / analysis_id
+    assert not folder.exists() or not list(folder.iterdir())
+    assert_friendly(client.post(f"/api/analyses/{analysis_id}/start"), 400, "no_video")
+
+
+def test_good_reupload_replaces_the_video_and_leaves_one_file(
+    client, analysis_id, uploaded, tiny_video
+):
+    new = tiny_video.read_bytes() + b"\0" * 16  # still readable, different bytes
+    response = upload(client, analysis_id, new)
+    assert response.status_code == 200
+    assert client.get(f"/api/analyses/{analysis_id}/video").content == new
+    assert len(list((config.ANALYSES_DIR / analysis_id).iterdir())) == 1
+
+
+def test_reupload_with_a_different_extension_does_not_orphan_the_old_file(
+    client, analysis_id, uploaded, tiny_video
+):
+    assert upload(client, analysis_id, tiny_video.read_bytes(), name="clip.mov").status_code == 200
+    names = [p.name for p in (config.ANALYSES_DIR / analysis_id).iterdir()]
+    assert names == ["source.mov"]

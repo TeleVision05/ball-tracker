@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import mimetypes
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -178,7 +179,7 @@ async def create_analysis(payload: CreateAnalysisRequest) -> Analysis:
 
 
 def _save_upload_within_limit(file: UploadFile, dest_path: Path) -> None:
-    """Copy the upload to disk, refusing (and removing) anything over the size limit."""
+    """Copy the upload to ``dest_path``, refusing (and removing) anything over the size limit."""
     limit = config.max_upload_bytes()
     written = 0
     try:
@@ -193,9 +194,31 @@ def _save_upload_within_limit(file: UploadFile, dest_path: Path) -> None:
         raise
 
 
+def _receive_and_validate_upload(file: UploadFile, final_path: Path, analysis_id: str):
+    """Write the upload to a temporary file, check it, then move it into place.
+
+    Anything that goes wrong leaves the analysis's existing video untouched and
+    no temporary file behind. Returns the video metadata.
+    """
+    temp_path = final_path.with_name(f".incoming-{uuid.uuid4().hex}{final_path.suffix}")
+    try:
+        _save_upload_within_limit(file, temp_path)
+        try:
+            meta = get_video_metadata(temp_path)
+        except VideoError as exc:
+            raise describe(
+                exc, f"reading the uploaded video for analysis_id={analysis_id}"
+            ).to_app_error() from exc
+        os.replace(temp_path, final_path)
+        return meta
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
 @router.post("/analyses/{analysis_id}/upload", response_model=Analysis)
 async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
-    await _get_analysis_or_404(analysis_id)
+    row = await _get_analysis_or_404(analysis_id)
 
     target_dir = analysis_dir(analysis_id)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -203,14 +226,10 @@ async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
     suffix = Path(file.filename or "video.mp4").suffix or ".mp4"
     dest_path = target_dir / f"source{suffix}"
 
-    _save_upload_within_limit(file, dest_path)
-
     try:
-        meta = get_video_metadata(dest_path)
-    except VideoError as exc:
-        raise describe(
-            exc, f"reading the uploaded video for analysis_id={analysis_id}"
-        ).to_app_error() from exc
+        meta = _receive_and_validate_upload(file, dest_path, analysis_id)
+    finally:
+        _remove_folder_if_empty(target_dir)
 
     await db.update_analysis(
         analysis_id,
@@ -223,8 +242,22 @@ async def upload_video(analysis_id: str, file: UploadFile) -> Analysis:
         status="uploaded",
         error=None,
     )
+    _remove_replaced_video(row.get("video_path"), dest_path)
     row = await db.get_analysis(analysis_id)
     return _row_to_analysis(row)
+
+
+def _remove_folder_if_empty(folder: Path) -> None:
+    try:
+        folder.rmdir()
+    except OSError:
+        pass
+
+
+def _remove_replaced_video(old_path: Optional[str], new_path: Path) -> None:
+    """Delete the previous copy once the record points at the new one (different extension)."""
+    if old_path and Path(old_path) != new_path:
+        Path(old_path).unlink(missing_ok=True)
 
 
 @router.post("/analyses/{analysis_id}/start")
