@@ -49,7 +49,9 @@ def main() -> None:
             end_frame=args.end_frame,
         )
     except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        from balltracker.user_messages import describe_cli_error
+
+        print(f"Error: {describe_cli_error(exc, 'analysing the delivery')}", file=sys.stderr)
         if args.calib is None:
             print(
                 "Provide --calib path.calib.json or place session.calib.json "

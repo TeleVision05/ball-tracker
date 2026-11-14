@@ -9,6 +9,7 @@ generic "Something went wrong" line; the detail stays in the log.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from .errors import (
     CalibrationFailedError,
@@ -75,3 +76,33 @@ def describe_error(exc: BaseException, context: str = "") -> str:
         exc_info=(type(exc), exc, exc.__traceback__),
     )
     return friendly_message(exc)
+
+
+CLI_LOG_PATH = Path("out/balltracker-errors.log")
+
+
+def describe_cli_error(exc: BaseException, context: str = "") -> str:
+    """Like ``describe_error`` for command-line scripts.
+
+    The raw detail goes to a log file instead of the terminal, and the returned
+    text says where that file is.
+    """
+    handler: logging.Handler | None = None
+    previous_propagate = logger.propagate
+    try:
+        CLI_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(CLI_LOG_PATH, encoding="utf-8")
+        logger.addHandler(handler)
+        logger.propagate = False
+    except OSError:
+        handler = None
+    try:
+        message = describe_error(exc, context)
+    finally:
+        logger.propagate = previous_propagate
+        if handler is not None:
+            logger.removeHandler(handler)
+            handler.close()
+    if handler is None:
+        return message
+    return f"{message} Technical details were saved to {CLI_LOG_PATH}."

@@ -38,7 +38,9 @@ def main() -> None:
             config_path=args.config,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        from balltracker.user_messages import describe_cli_error
+
+        print(f"Error: {describe_cli_error(exc, 'analysing the capture')}", file=sys.stderr)
         raise SystemExit(1) from exc
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -56,3 +56,19 @@ def test_analyze_capture_cli_missing_sidecar(tmp_path: Path) -> None:
     )
     assert completed.returncode == 1
     assert completed.stderr.startswith("Error:")
+
+
+def test_script_errors_are_plain_language_not_raw_exception_text(tmp_path: Path) -> None:
+    missing = tmp_path / "secret-folder-name" / "missing.json"
+    completed = subprocess.run(
+        [PYTHON, str(SCRIPT), "--sidecar", str(missing), "--out", str(tmp_path / "a.json")],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+    assert completed.returncode == 1
+    assert "secret-folder-name" not in completed.stderr
+    assert "Traceback" not in completed.stderr
+    assert "could not be found" in completed.stderr
+    assert "secret-folder-name" in (tmp_path / "out" / "balltracker-errors.log").read_text()

@@ -150,7 +150,9 @@ def main() -> int:
     try:
         frame, image_size = _read_frame(args.video, args.frame)
     except RuntimeError as exc:
-        print(exc, file=sys.stderr)
+        from balltracker.user_messages import describe_cli_error
+
+        print(describe_cli_error(exc, "reading the calibration frame"), file=sys.stderr)
         return 1
 
     if args.points is not None:
