@@ -8,6 +8,7 @@ import numpy as np
 
 from .calib_io import save_calibration
 from .calibration import CameraCalibration, reprojection_rmse, solve_pnp
+from .errors import CalibrationInputError
 
 LANDMARK_ORDER = [
     "bowler_left_base",
@@ -66,7 +67,9 @@ def calibrate_from_points(
         If fewer than ``MIN_LANDMARKS`` points or RMSE exceeds abort threshold.
     """
     if len(image_points) < MIN_LANDMARKS:
-        raise ValueError(f"Need at least {MIN_LANDMARKS} landmarks, got {len(image_points)}")
+        raise CalibrationInputError(
+            f"Need at least {MIN_LANDMARKS} landmarks, got {len(image_points)}"
+        )
 
     pts = {k: np.asarray(v, dtype=np.float64) for k, v in image_points.items()}
     calib = solve_pnp(pts, image_size=image_size, fov_deg=fov_deg)
@@ -74,7 +77,7 @@ def calibrate_from_points(
     calib.rms_reprojection_error = rmse
 
     if rmse > ABORT_RMSE_PX:
-        raise ValueError(
+        raise CalibrationInputError(
             f"Calibration RMSE {rmse:.2f} px exceeds {ABORT_RMSE_PX:.0f} px limit. "
             "Re-click stump landmarks more carefully."
         )

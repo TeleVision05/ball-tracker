@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .errors import VideoOpenError
 from .config import load_config
 
 
@@ -103,7 +104,9 @@ def detect_ball_white(frame_bgr: np.ndarray, config: dict | None = None) -> Ball
 
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
     # Low saturation, high value = white / bright leather.
-    mask = cv2.inRange(hsv, np.array([0, 0, 175], dtype=np.uint8), np.array([180, 70, 255], dtype=np.uint8))
+    mask = cv2.inRange(
+        hsv, np.array([0, 0, 175], dtype=np.uint8), np.array([180, 70, 255], dtype=np.uint8)
+    )
     return _best_circular_blob(mask, min_r, max_r, conf_thresh, frame_bgr.shape)
 
 
@@ -286,7 +289,7 @@ def detect_video(
         config = load_config()
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
 
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if end_frame is None or end_frame < 0:

@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { X, UploadCloud, Loader2, Film, AlertTriangle } from 'lucide-react'
-import { api, ApiError } from '../../api/client'
+import { api } from '../../api/client'
+import { friendlyError } from '../../lib/friendlyError'
+import { checkUploadSize, useUploadLimit } from '../../hooks/useUploadLimit'
 import type { Analysis } from '../../types'
 
 interface NewAnalysisModalProps {
@@ -17,6 +19,7 @@ export function NewAnalysisModal({ defaultName, onClose, onCreated }: NewAnalysi
   const [stage, setStage] = useState<Stage>('form')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const limitMb = useUploadLimit()
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -27,6 +30,11 @@ export function NewAnalysisModal({ defaultName, onClose, onCreated }: NewAnalysi
   const handleSubmit = async () => {
     if (!name.trim()) {
       setError('Please enter a name for this analysis.')
+      return
+    }
+    const tooLarge = file ? checkUploadSize(file, limitMb) : null
+    if (tooLarge) {
+      setError(tooLarge)
       return
     }
     setError(null)
@@ -41,7 +49,7 @@ export function NewAnalysisModal({ defaultName, onClose, onCreated }: NewAnalysi
       const uploaded = await api.uploadVideo(created.id, file)
       onCreated(uploaded)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong.')
+      setError(friendlyError(err, file ? 'upload video' : 'create analysis'))
       setStage('error')
     }
   }

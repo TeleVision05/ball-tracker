@@ -3,9 +3,30 @@
 All paths are resolved relative to this file so the app works regardless of
 the current working directory it is launched from.
 """
+
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    """Read a positive integer setting from the environment; bad values fall back."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < minimum:
+        _logger.warning("Ignoring invalid %s=%r; using %d", name, raw, default)
+        return default
+    return value
+
 
 # balltrace/backend/app/config.py -> app -> backend -> balltrace
 APP_DIR = Path(__file__).resolve().parent
@@ -44,6 +65,21 @@ OLLAMA_MAX_FRAME_WIDTH = 480
 # many raw images into one chat turn. Unique frames are sampled by stride
 # (no overlap re-work).
 ANALYZE_FRAMES_INDIVIDUALLY = True
+
+# Network binding. BallTrace has no login, so it listens on this machine only
+# unless BALLTRACE_HOST is changed on purpose (see balltrace/README.md).
+DEFAULT_HOST = "127.0.0.1"
+HOST = os.environ.get("BALLTRACE_HOST", "").strip() or DEFAULT_HOST
+PORT = _env_int("BALLTRACE_PORT", 8000)
+
+# Largest video accepted by the upload endpoint, in megabytes.
+DEFAULT_MAX_UPLOAD_MB = 500
+MAX_UPLOAD_MB = _env_int("BALLTRACE_MAX_UPLOAD_MB", DEFAULT_MAX_UPLOAD_MB)
+
+
+def max_upload_bytes() -> int:
+    return MAX_UPLOAD_MB * 1024 * 1024
+
 
 CORS_ORIGINS = [
     "http://localhost:5173",

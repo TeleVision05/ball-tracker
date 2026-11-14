@@ -1,5 +1,6 @@
 """Tests for the pure JSON extraction/repair/validation helpers used to
 parse Ollama vision model responses (app/services/ollama_client.py)."""
+
 from __future__ import annotations
 
 import pytest
@@ -42,7 +43,7 @@ def test_parse_json_with_leading_and_trailing_prose():
 
 
 def test_strip_code_fences_removes_fence_markers():
-    text = "```json\n{\"a\": 1}\n```"
+    text = '```json\n{"a": 1}\n```'
     assert strip_code_fences(text) == '{"a": 1}'
 
 

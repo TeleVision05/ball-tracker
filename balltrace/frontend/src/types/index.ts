@@ -76,6 +76,10 @@ export interface HealthResponse {
   ffmpeg_available: boolean
 }
 
+export interface Limits {
+  max_upload_mb: number
+}
+
 export interface OllamaSettings {
   base_url: string
   model: string

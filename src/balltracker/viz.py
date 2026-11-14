@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 
+from .errors import VideoOpenError
 from .pitch import PITCH_LENGTH_M, STUMP_HEIGHT_M, STUMP_WIDTH_M
 
 PITCH_CORRIDOR_M = 3.0
@@ -267,7 +268,9 @@ def _clip_frame_range(
 
     # Long capture: keep a window centred on bounce or track midpoint.
     bounce_candidates = [f for f in frames if f >= start and f <= end]
-    centre = bounce_candidates[len(bounce_candidates) // 2] if bounce_candidates else (start + end) // 2
+    centre = (
+        bounce_candidates[len(bounce_candidates) // 2] if bounce_candidates else (start + end) // 2
+    )
     half = int(CLIP_MAX_SECONDS * fps / 2)
     start = max(0, centre - half)
     end = min(total_frames - 1, centre + half)
@@ -289,7 +292,7 @@ def render_overlay_video(
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {video_path}")
+        raise VideoOpenError(f"Cannot open video: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 120.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -313,9 +316,7 @@ def render_overlay_video(
         start_frame, end_frame = 0, max(0, total_frames - 1)
 
     # Write intermediate with OpenCV, then transcode to H.264 for the browser.
-    tmp_raw = Path(
-        tempfile.mkstemp(prefix="balltracker_overlay_", suffix=".mp4")[1]
-    )
+    tmp_raw = Path(tempfile.mkstemp(prefix="balltracker_overlay_", suffix=".mp4")[1])
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(tmp_raw), fourcc, fps, (width, height))
     if not writer.isOpened():

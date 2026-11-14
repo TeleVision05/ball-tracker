@@ -1,4 +1,5 @@
 """Tests for overlapping-window detection merge + dedupe logic."""
+
 from __future__ import annotations
 
 from app.services.merge import merge_detections

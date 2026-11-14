@@ -1,5 +1,6 @@
 """Pydantic models: both the public API contract models and the internal
 models used to validate raw Ollama vision responses."""
+
 from __future__ import annotations
 
 from typing import List, Optional
@@ -37,6 +38,10 @@ class HealthResponse(BaseModel):
     ollama_url: str
     ollama_model: str
     ffmpeg_available: bool
+
+
+class LimitsResponse(BaseModel):
+    max_upload_mb: int
 
 
 class OllamaSettingsResponse(BaseModel):

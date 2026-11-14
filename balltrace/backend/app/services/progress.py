@@ -2,6 +2,7 @@
 progress endpoint. State is intentionally not persisted -- it only needs to
 survive for the lifetime of a running background task within this process.
 """
+
 from __future__ import annotations
 
 import time

@@ -4,6 +4,7 @@ Kept intentionally simple: a fresh connection is opened per operation. For a
 local, single-user tool this avoids any pooling/locking complexity while
 still being safe (SQLite handles short-lived connections fine).
 """
+
 from __future__ import annotations
 
 import json

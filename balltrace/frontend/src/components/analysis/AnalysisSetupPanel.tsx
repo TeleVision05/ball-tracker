@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { AlertTriangle, Film, Loader2, Play, UploadCloud, XCircle } from 'lucide-react'
-import { api, ApiError } from '../../api/client'
+import { api } from '../../api/client'
+import { friendlyError } from '../../lib/friendlyError'
+import { checkUploadSize, useUploadLimit } from '../../hooks/useUploadLimit'
 import type { Analysis } from '../../types'
 
 interface AnalysisSetupPanelProps {
@@ -14,15 +16,21 @@ export function AnalysisSetupPanel({ analysis, onUploaded, onStarted }: Analysis
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const limitMb = useUploadLimit()
 
   const handleFile = async (file: File) => {
+    const tooLarge = checkUploadSize(file, limitMb)
+    if (tooLarge) {
+      setError(tooLarge)
+      return
+    }
     setError(null)
     setUploading(true)
     try {
       const updated = await api.uploadVideo(analysis.id, file)
       onUploaded(updated)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Upload failed.')
+      setError(friendlyError(err, 'upload video'))
     } finally {
       setUploading(false)
     }
@@ -35,7 +43,7 @@ export function AnalysisSetupPanel({ analysis, onUploaded, onStarted }: Analysis
       await api.startAnalysis(analysis.id)
       onStarted()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to start analysis.')
+      setError(friendlyError(err, 'start analysis'))
     } finally {
       setStarting(false)
     }

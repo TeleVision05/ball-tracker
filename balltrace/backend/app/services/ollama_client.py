@@ -5,6 +5,7 @@ Ollama (via qwen3-vl or any other local vision model) is the ONLY ball
 detector in this system. This module never inspects pixel values itself --
 it only talks to the model and validates/repairs the JSON it sends back.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,6 +22,14 @@ from app.config import (
     OLLAMA_NUM_PREDICT,
     OLLAMA_TEMPERATURE,
 )
+from app.errors import (
+    OllamaError,
+    OllamaModelMissingError,
+    OllamaParseError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+)
+from app.friendly_errors import describe, friendly
 from app.models.schemas import RawDetectionItem, RawDetectionResponse
 from app.prompts.ball_detection import (
     CONTACT_SHEET_PROMPT,
@@ -28,23 +37,19 @@ from app.prompts.ball_detection import (
     SINGLE_FRAME_PROMPT,
 )
 
+__all__ = [
+    "OllamaClient",
+    "OllamaError",
+    "OllamaModelMissingError",
+    "OllamaParseError",
+    "OllamaTimeoutError",
+    "OllamaUnavailableError",
+]
+
 logger = logging.getLogger(__name__)
 
 _CODE_FENCE_OPEN_RE = re.compile(r"^```(?:json)?\s*", re.IGNORECASE)
 _CODE_FENCE_CLOSE_RE = re.compile(r"```\s*$")
-
-
-class OllamaError(Exception):
-    """Base class for all Ollama-related failures."""
-
-
-class OllamaUnavailableError(OllamaError):
-    """Raised when the Ollama server cannot be reached at all."""
-
-
-class OllamaParseError(OllamaError):
-    """Raised when the model's response could not be parsed as a valid
-    detection payload, even after one correction retry."""
 
 
 # ---------------------------------------------------------------------------
@@ -169,21 +174,95 @@ def parse_detection_response(text: str) -> RawDetectionResponse:
 # ---------------------------------------------------------------------------
 
 
+def _is_model_not_found(response: httpx.Response) -> bool:
+    """Ollama answers 404 with {"error": "model ... not found"} for an unknown model."""
+    if response.status_code != 404:
+        return False
+    text = response.text.lower()
+    return "model" in text and "not found" in text
+
+
+def _model_missing(tags: Any, model: str) -> bool:
+    """True when /api/tags lists models and ``model`` is not among them."""
+    models = tags.get("models") if isinstance(tags, dict) else None
+    if not isinstance(models, list):
+        return False
+    installed = set()
+    for entry in models:
+        if isinstance(entry, dict):
+            installed.update(str(entry.get(k)) for k in ("name", "model") if entry.get(k))
+    wanted = {model, f"{model}:latest"} if ":" not in model else {model}
+    return not (wanted & installed)
+
+
 class OllamaClient:
-    def __init__(self, base_url: str, model: str, timeout: float = OLLAMA_CHAT_TIMEOUT):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout: float = OLLAMA_CHAT_TIMEOUT,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        # Tests inject an ``httpx.MockTransport`` here instead of a real server.
+        self._transport = transport
+
+    def _http(self, timeout: float) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=timeout, transport=self._transport)
 
     async def check_available(self) -> Tuple[bool, Optional[str]]:
-        """Hit /api/tags to confirm the Ollama server is reachable."""
+        """Confirm the Ollama server is reachable and has the model installed.
+
+        The second value is a plain-language message for the user (never raw
+        exception text); the raw failure is logged.
+        """
         try:
-            async with httpx.AsyncClient(timeout=OLLAMA_HEALTH_TIMEOUT) as client:
+            async with self._http(OLLAMA_HEALTH_TIMEOUT) as client:
                 resp = await client.get(f"{self.base_url}/api/tags")
                 resp.raise_for_status()
+                tags = resp.json()
+        except httpx.TimeoutException as exc:
+            return False, describe(OllamaTimeoutError(str(exc)), "checking Ollama").message
+        except httpx.HTTPError as exc:
+            return False, describe(OllamaUnavailableError(str(exc)), "checking Ollama").message
+        except ValueError:
+            # Reachable but not a tags list: do not block the user on a guess.
+            logger.warning("Ollama /api/tags returned a body that is not JSON")
             return True, None
-        except Exception as exc:  # noqa: BLE001 - want to surface any failure reason
-            return False, str(exc)
+
+        if _model_missing(tags, self.model):
+            logger.warning("Ollama is running but model %r is not installed", self.model)
+            return False, friendly("ollama_model_missing", model=self.model).message
+        return True, None
+
+    async def _post_chat(self, payload: Dict[str, Any], image_count: int) -> Dict[str, Any]:
+        """POST to /api/chat and return the decoded JSON; map failures to typed errors."""
+        try:
+            async with self._http(self.timeout) as client:
+                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.TimeoutException as exc:
+            raise OllamaTimeoutError(
+                f"Ollama request timed out after {self.timeout:.0f}s "
+                f"(model={self.model}, images={image_count})"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            if _is_model_not_found(exc.response):
+                raise OllamaModelMissingError(self.model, exc.response.text[:200]) from exc
+            raise OllamaUnavailableError(
+                f"Ollama answered with HTTP {exc.response.status_code}"
+            ) from exc
+        except httpx.HTTPError as exc:
+            detail = str(exc).strip() or exc.__class__.__name__
+            raise OllamaUnavailableError(f"Ollama request failed: {detail}") from exc
+        except ValueError as exc:
+            raise OllamaParseError(f"Ollama reply was not valid JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise OllamaParseError(f"Ollama reply was {type(data).__name__}, expected an object")
+        return data
 
     async def _chat(self, prompt: str, images_b64: List[str]) -> str:
         # qwen3-vl (and other "thinking" VLMs) may emit long chain-of-thought
@@ -210,26 +289,16 @@ class OllamaClient:
                 "temperature": OLLAMA_TEMPERATURE,
             },
         }
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-        except httpx.TimeoutException as exc:
-            raise OllamaUnavailableError(
-                f"Ollama request timed out after {self.timeout:.0f}s "
-                f"(model={self.model}, images={len(images_b64)})"
-            ) from exc
-        except httpx.HTTPError as exc:
-            detail = str(exc).strip() or exc.__class__.__name__
-            raise OllamaUnavailableError(f"Ollama request failed: {detail}") from exc
+        data = await self._post_chat(payload, len(images_b64))
 
-        message = data.get("message") or {}
-        content = (message.get("content") or "").strip()
-        thinking = (message.get("thinking") or "").strip()
+        message = data.get("message")
+        if not isinstance(message, dict):
+            message = {}
+        content = str(message.get("content") or "").strip()
+        thinking = str(message.get("thinking") or "").strip()
         combined = content or thinking
         if not combined:
-            raise OllamaUnavailableError(
+            raise OllamaParseError(
                 "Ollama returned empty content and thinking "
                 f"(done_reason={data.get('done_reason')!r})"
             )
@@ -296,7 +365,6 @@ class OllamaClient:
             prompt,
             [contact_sheet_b64],
             correction_extra=(
-                f"There are exactly {frame_count} panels "
-                f"(frame_index 0..{frame_count - 1})."
+                f"There are exactly {frame_count} panels (frame_index 0..{frame_count - 1})."
             ),
         )

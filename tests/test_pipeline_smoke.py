@@ -27,7 +27,12 @@ from balltracker.plain_language import (
     summarize_delivery,
 )
 from balltracker.release import ReleaseSeed, mediapipe_available
-from balltracker.synthetic import _random_delivery, default_camera, generate_delivery, simulate_trajectory
+from balltracker.synthetic import (
+    _random_delivery,
+    default_camera,
+    generate_delivery,
+    simulate_trajectory,
+)
 from balltracker.tracking import TrackPoint, track_delivery_hybrid, track_video
 
 
@@ -49,11 +54,7 @@ def test_pnp_recovers_synthetic_camera() -> None:
     landmarks = stump_landmarks_3d()
     pts3 = np.stack(list(landmarks.values()))
     uv = cam.project(pts3)
-    img_pts = {
-        k: uv[i]
-        for i, k in enumerate(landmarks.keys())
-        if np.all(np.isfinite(uv[i]))
-    }
+    img_pts = {k: uv[i] for i, k in enumerate(landmarks.keys()) if np.all(np.isfinite(uv[i]))}
     K = cam.intrinsic_matrix()
     calib = solve_pnp(img_pts, image_size=cam.resolution, K=K)
     rmse = reprojection_rmse(calib, img_pts, landmarks)
@@ -67,11 +68,7 @@ def test_calib_io_roundtrip(tmp_path: Path) -> None:
     landmarks = stump_landmarks_3d()
     pts3 = np.stack(list(landmarks.values()))
     uv = cam.project(pts3)
-    stump_pts = {
-        k: uv[i]
-        for i, k in enumerate(landmarks.keys())
-        if np.all(np.isfinite(uv[i]))
-    }
+    stump_pts = {k: uv[i] for i, k in enumerate(landmarks.keys()) if np.all(np.isfinite(uv[i]))}
 
     calib_path = tmp_path / "test.calib.json"
     save_calibration(calib, calib_path, stump_image_points=stump_pts)
@@ -173,11 +170,7 @@ def test_pipeline_end_to_end(synthetic_delivery: tuple[Path, Path], tmp_path: Pa
     landmarks = stump_landmarks_3d()
     pts3 = np.stack(list(landmarks.values()))
     uv = cam.project(pts3)
-    stump_pts = {
-        k: uv[i]
-        for i, k in enumerate(landmarks.keys())
-        if np.all(np.isfinite(uv[i]))
-    }
+    stump_pts = {k: uv[i] for i, k in enumerate(landmarks.keys()) if np.all(np.isfinite(uv[i]))}
     save_calibration(calib, calib_path, stump_image_points=stump_pts)
 
     result = analyze_delivery(video, calib_path=calib_path, use_companion_track=True)

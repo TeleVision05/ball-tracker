@@ -9,7 +9,8 @@ import { AnalysisSetupPanel } from './components/analysis/AnalysisSetupPanel'
 import { NewAnalysisModal } from './components/analysis/NewAnalysisModal'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { useAnalysisProgress } from './hooks/useAnalysisProgress'
-import { api, ApiError } from './api/client'
+import { api } from './api/client'
+import { friendlyError } from './lib/friendlyError'
 import type { Analysis, AnalysisSummary, Detection, TrajectorySettings } from './types'
 
 type View = 'analysis' | 'settings'
@@ -70,7 +71,7 @@ export default function App() {
       const data = await api.listAnalyses()
       setAnalyses(data.sort((a, b) => (a.created_at < b.created_at ? 1 : -1)))
     } catch (err) {
-      setAnalysesError(err instanceof ApiError ? err.message : 'Failed to load analyses.')
+      setAnalysesError(friendlyError(err, 'load analyses'))
     } finally {
       setAnalysesLoading(false)
     }
@@ -87,7 +88,7 @@ export default function App() {
       const data = await api.getAnalysis(id)
       setSelectedAnalysis(data)
     } catch (err) {
-      setAnalysisError(err instanceof ApiError ? err.message : 'Failed to load analysis.')
+      setAnalysisError(friendlyError(err, 'load analysis'))
     } finally {
       setAnalysisLoading(false)
     }
@@ -155,7 +156,7 @@ export default function App() {
       await api.startAnalysis(selectedAnalysis.id)
       handleStarted()
     } catch (err) {
-      setAnalysisError(err instanceof ApiError ? err.message : 'Failed to start analysis.')
+      setAnalysisError(friendlyError(err, 'start analysis'))
     }
   }
 

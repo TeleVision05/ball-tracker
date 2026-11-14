@@ -5,6 +5,7 @@ import type {
   ExportVideoRequest,
   ExportVideoResponse,
   HealthResponse,
+  Limits,
   OllamaSettings,
   OllamaSettingsUpdate,
   StartAnalysisRequest,
@@ -12,31 +13,45 @@ import type {
 
 const API_BASE = '/api'
 
+/**
+ * A failed API call. `message` is for logs only. `detail` and `code` are set
+ * only when the backend sent a worded error; show them through `friendlyError`.
+ */
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  code: string | null
+  detail: string | null
+  constructor(status: number, message: string, code: string | null = null, detail: string | null = null) {
     super(message)
     this.status = status
+    this.code = code
+    this.detail = detail
     this.name = 'ApiError'
   }
+}
+
+async function readErrorBody(res: Response): Promise<{ code: string | null; detail: string | null }> {
+  try {
+    const body = await res.json()
+    if (typeof body?.code === 'string' && typeof body?.detail === 'string') {
+      return { code: body.code, detail: body.detail }
+    }
+  } catch {
+    // no JSON body (for example a proxy error page)
+  }
+  return { code: null, detail: null }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(`${API_BASE}${path}`, init)
-  } catch {
-    throw new ApiError(0, 'Could not reach the BallTrace backend. Is it running on port 8000?')
+  } catch (cause) {
+    throw new ApiError(0, `network error calling ${path}: ${String(cause)}`)
   }
   if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const body = await res.json()
-      detail = body?.detail ?? detail
-    } catch {
-      // response had no JSON body; fall back to statusText
-    }
-    throw new ApiError(res.status, detail)
+    const { code, detail } = await readErrorBody(res)
+    throw new ApiError(res.status, `HTTP ${res.status} calling ${path}`, code, detail)
   }
   if (res.status === 204) return undefined as T
   return (await res.json()) as T
@@ -49,6 +64,10 @@ function jsonHeaders(): HeadersInit {
 export const api = {
   health(): Promise<HealthResponse> {
     return request('/health')
+  },
+
+  limits(): Promise<Limits> {
+    return request('/limits')
   },
 
   getOllamaSettings(): Promise<OllamaSettings> {

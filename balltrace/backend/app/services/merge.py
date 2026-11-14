@@ -6,6 +6,7 @@ covered it). We keep exactly one detection per frame_index, preferring:
   1. A visible detection over a non-visible one.
   2. Among detections with the same visibility, the higher confidence one.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
